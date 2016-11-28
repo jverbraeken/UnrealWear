@@ -105,15 +105,16 @@ public class MainActivity extends WearableActivity implements SensorEventListene
                 //ready = true;
                 break;
             case Sensor.TYPE_ROTATION_VECTOR:
-                mGravity = event.values.clone();
-                ready = true;
+                float quaternion[] = new float[4];
+                SensorManager.getQuaternionFromVector(quaternion, event.values);
+                sendOrientation(mNode.getId(), quaternion);
                 break;
         }
-        if (ready) {
-            float rotationMatrix[] = new float[16];
-            SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
-            sendOrientation(mNode.getId(), rotationMatrix);
-        }
+//        if (ready) {
+//            float rotationMatrix[] = new float[16];
+//            SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
+//            sendOrientation(mNode.getId(), rotationMatrix);
+//        }
         /*if (ready) {
             ready = false;
             if (timestamp != 0) {
@@ -155,9 +156,9 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     }
 
     private void sendOrientation(String node, final float[] rotationMatrix) {
-        Log.d(TAG, "Now sending rotation matrix: " + Arrays.toString(rotationMatrix));
-        ByteBuffer byteBuffer = ByteBuffer.allocate(16 * 4);
-        for (int i = 0; i < 16; i++) {
+        Log.d(TAG, "Now sending quaternion: " + Arrays.toString(rotationMatrix));
+        ByteBuffer byteBuffer = ByteBuffer.allocate(4 * 4);
+        for (int i = 0; i < 4; i++) {
             byteBuffer.putFloat(rotationMatrix[i]);
         }
         final byte[] data = byteBuffer.array();
@@ -175,10 +176,10 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         super.onResume();
         mGoogleApiClient.connect();
         Log.d(TAG, "resumed");
-        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
-        mSensorManager.registerListener(this, magnetomer, SensorManager.SENSOR_DELAY_FASTEST);
-        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
-        mSensorManager.registerListener(this, rotationVector, SensorManager.SENSOR_DELAY_FASTEST);
+        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, magnetomer, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, rotationVector, SensorManager.SENSOR_DELAY_GAME);
     }
 
     @Override
