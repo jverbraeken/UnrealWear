@@ -89,11 +89,11 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         }
     }
 
-    private void sendOrientation(String node, final float[] rotationMatrix) {
-        Log.d(TAG, "Now sending quaternion: " + Arrays.toString(rotationMatrix));
+    private void sendOrientation(String node, final float[] quaternion) {
+        Log.d(TAG, "Now sending quaternion: " + Arrays.toString(quaternion));
         ByteBuffer byteBuffer = ByteBuffer.allocate(4 * 4);
         for (int i = 0; i < 4; i++) {
-            byteBuffer.putFloat(rotationMatrix[i]);
+            byteBuffer.putFloat(quaternion[i]);
         }
         final byte[] data = byteBuffer.array();
         Wearable.MessageApi.sendMessage(mGoogleApiClient, node,
@@ -109,7 +109,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     protected void onResume() {
         super.onResume();
         mGoogleApiClient.connect();
-        Log.d(TAG, "resumed");
+        android.util.Log.d(TAG, "resumed");
         mSensorManager.registerListener(this, rotationVector, SensorManager.SENSOR_DELAY_GAME);
     }
 
