@@ -27,7 +27,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private Node mNode;
 
     private SensorManager mSensorManager;
-    private Sensor rotationVector;
+    private Sensor gyrometer;
+    private Sensor accelerometer;
 
 
     @Override
@@ -36,7 +37,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         setContentView(R.layout.activity_main);
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
-        rotationVector = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        gyrometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        accelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
         mGoogleApiClient = new GoogleApiClient.Builder(this)
                 .addApi(Wearable.API)
@@ -82,18 +84,34 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
         switch (event.sensor.getType()) {
             case Sensor.TYPE_ROTATION_VECTOR:
-                float quaternion[] = new float[4];
-                SensorManager.getQuaternionFromVector(quaternion, event.values);
-                sendOrientation(mNode.getId(), quaternion);
+                float[] rotation = new float[4];
+                SensorManager.getQuaternionFromVector(rotation, event.values);
+                sendRotation(mNode.getId(), rotation);
+                break;
+            case Sensor.TYPE_ACCELEROMETER:
+                float[] acceleration = new float[3];
+                System.arraycopy(event.values, 0, acceleration, 0, 3);
+                sendAcceleration(mNode.getId(), acceleration);
                 break;
         }
     }
 
-    private void sendOrientation(String node, final float[] quaternion) {
-        Log.d(TAG, "Now sending quaternion: " + Arrays.toString(quaternion));
+    private void sendRotation(String node, float[] rotation) {
+        Log.d(TAG, "Now sending rotation: " + Arrays.toString(rotation));
         ByteBuffer byteBuffer = ByteBuffer.allocate(4 * 4);
         for (int i = 0; i < 4; i++) {
-            byteBuffer.putFloat(quaternion[i]);
+            byteBuffer.putFloat(rotation[i]);
+        }
+        final byte[] data = byteBuffer.array();
+        Wearable.MessageApi.sendMessage(mGoogleApiClient, node,
+                "WEAR_ORIENTATION", data);
+    }
+
+    private void sendAcceleration(String node, float[] acceleration) {
+        Log.d(TAG, "Now sending acceleration: " + Arrays.toString(acceleration));
+        ByteBuffer byteBuffer = ByteBuffer.allocate(3 * 4);
+        for (int i = 0; i < 3; i++) {
+            byteBuffer.putFloat(acceleration[i]);
         }
         final byte[] data = byteBuffer.array();
         Wearable.MessageApi.sendMessage(mGoogleApiClient, node,
@@ -110,7 +128,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         super.onResume();
         mGoogleApiClient.connect();
         android.util.Log.d(TAG, "resumed");
-        mSensorManager.registerListener(this, rotationVector, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, gyrometer, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
     }
 
     @Override
