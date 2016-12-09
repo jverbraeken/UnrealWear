@@ -35,6 +35,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        setAmbientEnabled();
 
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         gyrometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
