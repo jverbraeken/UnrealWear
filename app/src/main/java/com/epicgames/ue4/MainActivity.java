@@ -102,8 +102,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
             case Sensor.TYPE_ROTATION_VECTOR:
                 float[] rotation = new float[4];
                 //Log.d(TAG, "Now sending rotation: " + Arrays.toString(event.values));
-                SensorManager.getQuaternionFromVector(rotation, event.values);
-                sendRotation(mNode.getId(), rotation);
+                //SensorManager.getQuaternionFromVector(rotation, event.values);
+                sendRotation(mNode.getId(), event.values);
                 break;
             case Sensor.TYPE_ACCELEROMETER:
                 float[] acceleration = new float[3];
@@ -142,8 +142,30 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         return result;
     }
 
-    private void sendRotation(String node, float[] rotation) {
-        float[] euler = toAngles(rotation);
+    private void sendRotation(String node, float[] values) {
+        float[] result = new float[3];
+        float vec[] = values;
+        float[] orientation = new float[3];
+        float[] rotMat = new float[9];
+        SensorManager.getRotationMatrixFromVector(rotMat, vec);
+        SensorManager.getOrientation(rotMat, orientation);
+        result[0] = orientation[0] * 180.f / (float) Math.PI; //Yaw
+        result[1] = orientation[1] * 180.f / (float) Math.PI; //Pitch
+        result[2] = orientation[2] * 180.f / (float) Math.PI; //Roll
+        Log.d(TAG, String.format("Now sending rotation: %.2f, %.2f, %.2f", result[0], result[1], result[2]));
+        try {
+            if (outputStream != null) {
+                outputStream.writeFloat(result[0]);
+                outputStream.writeFloat(result[1]);
+                outputStream.writeFloat(result[2]);
+            } else {
+                Log.d(TAG, "rotation: Outputstream was null!");
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        /*float[] euler = toAngles(rotation);
         Log.d(TAG, "Now sending rotation: " + Arrays.toString(euler));
         ByteBuffer byteBuffer = ByteBuffer.allocate(4 * 4);
         for (int i = 0; i < 4; i++) {
@@ -162,7 +184,12 @@ public class MainActivity extends WearableActivity implements SensorEventListene
             }
         } catch (IOException e) {
             e.printStackTrace();
-        }
+        }*/
+
+
+
+
+
         //Wearable.MessageApi.sendMessage(mGoogleApiClient, node,
         //        "WEAR_ORIENTATION", data);
     }
