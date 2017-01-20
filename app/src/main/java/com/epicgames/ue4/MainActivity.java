@@ -13,18 +13,14 @@ import android.util.Log;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Channel;
 import com.google.android.gms.wearable.ChannelApi;
 import com.google.android.gms.wearable.Node;
-import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.util.Arrays;
 
 public class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     public static final String TAG = "WearApp";
@@ -63,20 +59,15 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     @Override
     public void onConnected(@Nullable Bundle bundle) {
         Wearable.NodeApi.getConnectedNodes(mGoogleApiClient)
-                .setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
-                    @Override
-                    public void onResult(@NonNull NodeApi.GetConnectedNodesResult nodes) {
-                        for (final Node node : nodes.getNodes()) {
-                            mNode = node;
-                            new Thread() {
-                                @Override
-                                public void run() {
-                                    ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").await();
-                                    channel = result.getChannel();
-                                    outputStream = new DataOutputStream(channel.getOutputStream(mGoogleApiClient).await().getOutputStream());
-                                }
-                            }.start();
-                        }
+                .setResultCallback(nodes -> {
+                    for (final Node node : nodes.getNodes()) {
+                        mNode = node;
+                        Runnable task = () -> {
+                            ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").await();
+                            channel = result.getChannel();
+                            outputStream = new DataOutputStream(channel.getOutputStream(mGoogleApiClient).await().getOutputStream());
+                        };
+                        new Thread(task).start();
                     }
                 });
     }
@@ -100,10 +91,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
 
         switch (event.sensor.getType()) {
             case Sensor.TYPE_ROTATION_VECTOR:
-                float[] rotation = new float[4];
-                //Log.d(TAG, "Now sending rotation: " + Arrays.toString(event.values));
-                //SensorManager.getQuaternionFromVector(rotation, event.values);
-                sendRotation(mNode.getId(), event.values);
+                sendRotation(event.values);
                 break;
             case Sensor.TYPE_ACCELEROMETER:
                 float[] acceleration = new float[3];
@@ -113,41 +101,11 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         }
     }
 
-    public float[] toAngles(float[] angles) {
+    private void sendRotation(float[] values) {
         float[] result = new float[3];
-        float sqw = angles[0] * angles[0];
-        float sqx = angles[1] * angles[1];
-        float sqy = angles[2] * angles[2];
-        float sqz = angles[3] * angles[3];
-        float unit = sqx + sqy + sqz + sqw; // if normalized is one, otherwise
-        // is correction factor
-        float test = angles[1] * angles[2] + angles[3] * angles[0];
-        if (test > 0.499 * unit) { // singularity at north pole
-            result[1] = 2 * (float) Math.atan2(angles[1], angles[0]);
-            result[2] = (float) Math.PI / 2f;
-            result[0] = 0;
-        } else if (test < -0.499 * unit) { // singularity at south pole
-            result[1] = -2 * (float) Math.atan2(angles[1], angles[0]);
-            result[2] = (float) -Math.PI / 2f;
-            result[0] = 0;
-        } else {
-            result[1] = (float) Math.atan2(2 * angles[2] * angles[0] - 2 * angles[1] * angles[3], sqx - sqy - sqz + sqw); // roll or heading
-            result[2] = (float) Math.asin(2 * test / unit); // pitch or attitude
-            result[0] = (float) Math.atan2(2 * angles[1] * angles[0] - 2 * angles[2] * angles[3], -sqx + sqy - sqz + sqw); // yaw or bank
-        }
-
-        result[0] *= 180 / Math.PI;
-        result[1] *= 180 / Math.PI;
-        result[2] *= 180 / Math.PI;
-        return result;
-    }
-
-    private void sendRotation(String node, float[] values) {
-        float[] result = new float[3];
-        float vec[] = values;
         float[] orientation = new float[3];
         float[] rotMat = new float[9];
-        SensorManager.getRotationMatrixFromVector(rotMat, vec);
+        SensorManager.getRotationMatrixFromVector(rotMat, values);
         SensorManager.getOrientation(rotMat, orientation);
         result[0] = orientation[0] * 180.f / (float) Math.PI; //Yaw
         result[1] = orientation[1] * 180.f / (float) Math.PI; //Pitch
@@ -164,34 +122,6 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-        /*float[] euler = toAngles(rotation);
-        Log.d(TAG, "Now sending rotation: " + Arrays.toString(euler));
-        ByteBuffer byteBuffer = ByteBuffer.allocate(4 * 4);
-        for (int i = 0; i < 4; i++) {
-            byteBuffer.putFloat(rotation[i]);
-        }
-        final byte[] data = byteBuffer.array();
-        try {
-            if (outputStream != null) {
-                //outputStream.write(data);
-                outputStream.writeFloat(euler[0]);
-                outputStream.writeFloat(euler[1]);
-                outputStream.writeFloat(euler[2]);
-                outputStream.writeFloat(0);
-            } else {
-                Log.d(TAG, "rotation: Outputstream was null!");
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }*/
-
-
-
-
-
-        //Wearable.MessageApi.sendMessage(mGoogleApiClient, node,
-        //        "WEAR_ORIENTATION", data);
     }
 
     private void sendAcceleration(String node, float[] acceleration) {
@@ -232,5 +162,6 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     protected void onPause() {
         super.onPause();
         mSensorManager.unregisterListener(this);
+        android.util.Log.d(TAG, "paused");
     }
 }
