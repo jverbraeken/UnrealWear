@@ -13,13 +13,20 @@ import android.util.Log;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Channel;
 import com.google.android.gms.wearable.ChannelApi;
 import com.google.android.gms.wearable.Node;
+import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 
 public class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
@@ -32,6 +39,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private SensorManager mSensorManager;
     private Sensor gyroscope;
     private Sensor accelerometer;
+    private DatagramSocket datagramSocket;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,6 +57,12 @@ public class MainActivity extends WearableActivity implements SensorEventListene
                 .addOnConnectionFailedListener(this)
                 .build();
         mGoogleApiClient.connect();
+
+        try {
+            datagramSocket = new DatagramSocket(8765);
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -59,17 +73,24 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     @Override
     public void onConnected(@Nullable Bundle bundle) {
         Wearable.NodeApi.getConnectedNodes(mGoogleApiClient)
-                .setResultCallback(nodes -> {
-                    for (final Node node : nodes.getNodes()) {
-                        mNode = node;
-                        Runnable task = () -> {
-                            ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").await();
-                            channel = result.getChannel();
-                            outputStream = new DataOutputStream(channel.getOutputStream(mGoogleApiClient).await().getOutputStream());
-                        };
-                        new Thread(task).start();
+                .setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
+                    @Override
+                    public void onResult(@NonNull NodeApi.GetConnectedNodesResult getConnectedNodesResult) {
+                        for (final Node node : getConnectedNodesResult.getNodes()) {
+                            mNode = node;
+                            Runnable task = new Runnable() {
+                                @Override
+                                public void run() {
+                                    ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").await();
+                                    channel = result.getChannel();
+                                    outputStream = new DataOutputStream(channel.getOutputStream(mGoogleApiClient).await().getOutputStream());
+                                }
+                            };
+                            new Thread(task).start();
+                        }
                     }
-                });
+                }
+                );
     }
 
     @Override
@@ -122,6 +143,20 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         } catch (IOException e) {
             e.printStackTrace();
         }
+        final float[] result2 = result;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    InetAddress IPAddress = InetAddress.getByName("192.168.178.42");
+                    byte[] bytes = ByteBuffer.allocate(4 * 3).putFloat(result2[0]).putFloat(result2[1]).putFloat(result2[2]).array();
+                    datagramSocket.setBroadcast(true);
+                    datagramSocket.send(new DatagramPacket(bytes, 4 * 3, IPAddress, 8765));
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
     }
 
     private void sendAcceleration(String node, float[] acceleration) {
