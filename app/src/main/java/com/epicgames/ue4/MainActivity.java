@@ -41,6 +41,9 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     private Sensor accelerometer;
     private DatagramSocket datagramSocket;
 
+    private static final String IP_ADDRESS = "192.168.188.23";
+    private static final int PORT = 55056;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -59,7 +62,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         mGoogleApiClient.connect();
 
         try {
-            datagramSocket = new DatagramSocket(8765);
+            datagramSocket = new DatagramSocket(PORT);
         } catch (SocketException e) {
             e.printStackTrace();
         }
@@ -148,10 +151,10 @@ public class MainActivity extends WearableActivity implements SensorEventListene
             @Override
             public void run() {
                 try {
-                    InetAddress IPAddress = InetAddress.getByName("192.168.178.42");
+                    InetAddress IPAddress = InetAddress.getByName(IP_ADDRESS);
                     byte[] bytes = ByteBuffer.allocate(4 * 3).putFloat(result2[0]).putFloat(result2[1]).putFloat(result2[2]).array();
                     datagramSocket.setBroadcast(true);
-                    datagramSocket.send(new DatagramPacket(bytes, 4 * 3, IPAddress, 8765));
+                    datagramSocket.send(new DatagramPacket(bytes, 4 * 3, IPAddress, PORT));
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
@@ -189,8 +192,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         super.onResume();
         mGoogleApiClient.connect();
         android.util.Log.d(TAG, "resumed");
-        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
-        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
+        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
