@@ -10,6 +10,9 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
+import android.view.MotionEvent;
+import android.view.View;
+import android.widget.ImageView;
 
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
@@ -20,26 +23,51 @@ import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     public static final String TAG = "WearApp";
+    private static final String IP_ADDRESS = "192.168.178.42";
+    private static final int PORT = 55056;
+    private static final InetAddress IPAddress;
+    private static final long SEND_TIME_THRESHOLD = 1000 / 60; // 60 times per 1000 millisecond (= 60 times per second)
+    private static final Touch NO_TOUCH = new Touch(-1, -1, -1);
+
+    static {
+        InetAddress tmp = null;
+        try {
+            tmp = InetAddress.getByName(IP_ADDRESS);
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        }
+        IPAddress = tmp;
+    }
+
     private Channel channel;
     private GoogleApiClient mGoogleApiClient;
     private Node mNode;
     private DataOutputStream outputStream;
-
     private SensorManager mSensorManager;
     private Sensor gyroscope;
     private Sensor accelerometer;
     private DatagramSocket datagramSocket;
+    private boolean touchWasOnScreen = false;
+    private List<Rotation> rotations = new ArrayList<>();
+    private List<Acceleration> accelerations = new ArrayList<>();
+    private Touch touch = NO_TOUCH;
+    private Timestamp lastDataSend;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,9 +75,21 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         setContentView(R.layout.activity_main);
         setAmbientEnabled();
 
+        lastDataSend = new Timestamp(System.currentTimeMillis());
+
         mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         gyroscope = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         accelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+
+        final ImageView imageView = (ImageView) findViewById(R.id.imageView);
+        imageView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(final View view, final MotionEvent event) {
+                touchWasOnScreen = true;
+                touch = new Touch(event.getRawX(), event.getRawY(), touchWasOnScreen ? 1 : 0);
+                return true;
+            }
+        });
 
         mGoogleApiClient = new GoogleApiClient.Builder(this)
                 .addApi(Wearable.API)
@@ -59,7 +99,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         mGoogleApiClient.connect();
 
         try {
-            datagramSocket = new DatagramSocket(8765);
+            datagramSocket = new DatagramSocket(55056);
         } catch (SocketException e) {
             e.printStackTrace();
         }
@@ -74,22 +114,22 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     public void onConnected(@Nullable Bundle bundle) {
         Wearable.NodeApi.getConnectedNodes(mGoogleApiClient)
                 .setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
-                    @Override
-                    public void onResult(@NonNull NodeApi.GetConnectedNodesResult getConnectedNodesResult) {
-                        for (final Node node : getConnectedNodesResult.getNodes()) {
-                            mNode = node;
-                            Runnable task = new Runnable() {
-                                @Override
-                                public void run() {
-                                    ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").await();
-                                    channel = result.getChannel();
-                                    outputStream = new DataOutputStream(channel.getOutputStream(mGoogleApiClient).await().getOutputStream());
-                                }
-                            };
-                            new Thread(task).start();
-                        }
-                    }
-                }
+                                       @Override
+                                       public void onResult(@NonNull NodeApi.GetConnectedNodesResult getConnectedNodesResult) {
+                                           for (final Node node : getConnectedNodesResult.getNodes()) {
+                                               mNode = node;
+                                               Runnable task = new Runnable() {
+                                                   @Override
+                                                   public void run() {
+                                                       ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").await();
+                                                       channel = result.getChannel();
+                                                       outputStream = new DataOutputStream(channel.getOutputStream(mGoogleApiClient).await().getOutputStream());
+                                                   }
+                                               };
+                                               new Thread(task).start();
+                                           }
+                                       }
+                                   }
                 );
     }
 
@@ -123,50 +163,42 @@ public class MainActivity extends WearableActivity implements SensorEventListene
     }
 
     private void sendRotation(float[] values) {
-        float[] result = new float[3];
         float[] orientation = new float[3];
         float[] rotMat = new float[9];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
         SensorManager.getOrientation(rotMat, orientation);
-        result[0] = orientation[0] * 180.f / (float) Math.PI; //Yaw
-        result[1] = orientation[1] * 180.f / (float) Math.PI; //Pitch
-        result[2] = orientation[2] * 180.f / (float) Math.PI; //Roll
-        Log.d(TAG, String.format("Now sending rotation: %.2f, %.2f, %.2f", result[0], result[1], result[2]));
+        final float[] rotation = new float[3];
+        rotation[0] = orientation[0] * 180.f / (float) Math.PI; //Yaw
+        rotation[1] = orientation[1] * 180.f / (float) Math.PI; //Pitch
+        rotation[2] = orientation[2] * 180.f / (float) Math.PI; //Roll
+        Log.d(TAG, String.format("Now saving rotation: %.2f, %.2f, %.2f", rotation[0], rotation[1], rotation[2]));
         try {
             if (outputStream != null) {
-                outputStream.writeFloat(result[0]);
-                outputStream.writeFloat(result[1]);
-                outputStream.writeFloat(result[2]);
+                outputStream.writeFloat(rotation[0]);
+                outputStream.writeFloat(rotation[1]);
+                outputStream.writeFloat(rotation[2]);
             } else {
                 Log.d(TAG, "rotation: Outputstream was null!");
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
-        final float[] result2 = result;
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    InetAddress IPAddress = InetAddress.getByName("192.168.178.42");
-                    byte[] bytes = ByteBuffer.allocate(4 * 3).putFloat(result2[0]).putFloat(result2[1]).putFloat(result2[2]).array();
-                    datagramSocket.setBroadcast(true);
-                    datagramSocket.send(new DatagramPacket(bytes, 4 * 3, IPAddress, 8765));
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }).start();
+        rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
+        sendData();
     }
 
-    private void sendAcceleration(String node, float[] acceleration) {
-        //Log.d(TAG, "Now sending acceleration: " + Arrays.toString(acceleration));
+    private void sendAcceleration(String node, float[] values) {
+        final float[] acceleration = new float[3];
+        acceleration[0] = values[0];
+        acceleration[1] = values[1];
+        acceleration[2] = values[1];
+        Log.d(TAG, String.format("Now sending acceleration: %.2f, %.2f, %.2f", acceleration[0], acceleration[1], acceleration[2]));
         ByteBuffer byteBuffer = ByteBuffer.allocate(3 * 4);
         for (int i = 0; i < 3; i++) {
             byteBuffer.putFloat(acceleration[i]);
         }
         final byte[] data = byteBuffer.array();
-        /*try {
+        try {
             if (outputStream != null) {
                 outputStream.write(data);
             } else {
@@ -174,9 +206,39 @@ public class MainActivity extends WearableActivity implements SensorEventListene
             }
         } catch (IOException e) {
             e.printStackTrace();
-        }*/
-        //Wearable.MessageApi.sendMessage(mGoogleApiClient, node,
-        //        "WEAR_ORIENTATION", data);
+        }
+        accelerations.add(new Acceleration(acceleration[0], acceleration[1], acceleration[2]));
+        sendData();
+    }
+
+    private void sendData() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (System.currentTimeMillis() - lastDataSend.getTime() > SEND_TIME_THRESHOLD) {
+                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
+
+                        objectOutputStream.writeObject(rotations);
+                        objectOutputStream.writeObject(accelerations);
+                        objectOutputStream.writeObject((touchWasOnScreen && touch == NO_TOUCH) ? new Touch(-1, -1, 2) : touch);
+
+                        final byte[] byteArray = byteArrayOutputStream.toByteArray();
+                        byte[] bytes = ByteBuffer.allocate(byteArray.length).put(byteArray).array();
+                        datagramSocket.setBroadcast(true);
+                        datagramSocket.send(new DatagramPacket(bytes, byteArray.length, IPAddress, PORT));
+
+                        if (touch == NO_TOUCH) {
+                            touchWasOnScreen = false;
+                        }
+                        touch = NO_TOUCH;
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
     }
 
     @Override
@@ -189,14 +251,14 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         super.onResume();
         mGoogleApiClient.connect();
         android.util.Log.d(TAG, "resumed");
-        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
-        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
+        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
+        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
     protected void onPause() {
-        super.onPause();
         mSensorManager.unregisterListener(this);
         android.util.Log.d(TAG, "paused");
+        super.onPause();
     }
 }
