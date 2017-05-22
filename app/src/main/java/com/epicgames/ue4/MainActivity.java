@@ -99,7 +99,7 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         mGoogleApiClient.connect();
 
         try {
-            datagramSocket = new DatagramSocket(55056);
+            datagramSocket = new DatagramSocket(PORT);
         } catch (SocketException e) {
             e.printStackTrace();
         }
