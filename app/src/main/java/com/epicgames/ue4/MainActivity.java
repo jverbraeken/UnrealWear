@@ -85,8 +85,8 @@ public class MainActivity extends WearableActivity implements SensorEventListene
         imageView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(final View view, final MotionEvent event) {
+                touch = new Touch(event.getRawX(), event.getRawY(), touchWasOnScreen ? (byte) 1 : (byte) 0);
                 touchWasOnScreen = true;
-                touch = new Touch(event.getRawX(), event.getRawY(), touchWasOnScreen ? 1 : 0);
                 return true;
             }
         });
@@ -217,12 +217,33 @@ public class MainActivity extends WearableActivity implements SensorEventListene
             public void run() {
                 try {
                     if (System.currentTimeMillis() - lastDataSend.getTime() > SEND_TIME_THRESHOLD) {
-                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
-                        ObjectOutputStream objectOutputStream = new ObjectOutputStream(byteArrayOutputStream);
 
-                        objectOutputStream.writeObject(rotations);
-                        objectOutputStream.writeObject(accelerations);
-                        objectOutputStream.writeObject((touchWasOnScreen && touch == NO_TOUCH) ? new Touch(-1, -1, 2) : touch);
+                        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                        DataOutputStream dataOutputStream = new DataOutputStream(byteArrayOutputStream);
+
+                        final Rotation avgRotation = averageRot(rotations);
+                        final Acceleration avgAcceleration = averageAcc(accelerations);
+
+                        dataOutputStream.writeFloat(avgRotation.x);
+                        dataOutputStream.writeFloat(avgRotation.y);
+                        dataOutputStream.writeFloat(avgRotation.z);
+                        dataOutputStream.writeLong(avgRotation.timestamp);
+
+                        dataOutputStream.writeFloat(avgAcceleration.x);
+                        dataOutputStream.writeFloat(avgAcceleration.y);
+                        dataOutputStream.writeFloat(avgAcceleration.z);
+                        dataOutputStream.writeLong(avgAcceleration.timestamp);
+
+                        if (touchWasOnScreen && touch == NO_TOUCH) {
+                            dataOutputStream.writeFloat(-1);
+                            dataOutputStream.writeFloat(-1);
+                            dataOutputStream.writeByte(2);
+                        } else {
+                            dataOutputStream.writeFloat(touch.x);
+                            dataOutputStream.writeFloat(touch.y);
+                            dataOutputStream.writeByte(touch.state);
+                        }
+                        dataOutputStream.writeLong(touch.timestamp);
 
                         final byte[] byteArray = byteArrayOutputStream.toByteArray();
                         byte[] bytes = ByteBuffer.allocate(byteArray.length).put(byteArray).array();
@@ -239,6 +260,32 @@ public class MainActivity extends WearableActivity implements SensorEventListene
                 }
             }
         }).start();
+    }
+
+    private Rotation averageRot(final List<Rotation> rotations) {
+        float x = 0, y = 0, z = 0;
+        for (Rotation rotation : rotations) {
+            x += rotation.x;
+            y += rotation.y;
+            z += rotation.z;
+        }
+        x /= rotations.size();
+        y /= rotations.size();
+        z /= rotations.size();
+        return new Rotation(x, y, z);
+    }
+
+    private Acceleration averageAcc(final List<Acceleration> accelerations) {
+        float x = 0, y = 0, z = 0;
+        for (Acceleration acceleration : accelerations) {
+            x += acceleration.x;
+            y += acceleration.y;
+            z += acceleration.z;
+        }
+        x /= accelerations.size();
+        y /= accelerations.size();
+        z /= accelerations.size();
+        return new Acceleration(x, y, z);
     }
 
     @Override

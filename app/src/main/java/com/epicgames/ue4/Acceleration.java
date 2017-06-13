@@ -1,15 +1,20 @@
 package com.epicgames.ue4;
 
-import java.sql.Timestamp;
-
 class Acceleration {
     final float x, y, z;
-    final Timestamp timestamp;
+    final long timestamp;
 
     Acceleration(float x, float y, float z) {
         this.x = x;
         this.y = y;
         this.z = z;
-        this.timestamp = new Timestamp(System.currentTimeMillis());
+        this.timestamp = System.currentTimeMillis();
+    }
+
+    Acceleration(float x, float y, float z, long timestamp) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.timestamp = timestamp;
     }
 }
