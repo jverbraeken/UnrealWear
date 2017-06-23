@@ -33,8 +33,8 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Vector;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -58,8 +58,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         INET_ADDRESS = tmp;
     }
 
-    private final List<Rotation> rotations = new Vector<>();
-    private final List<Acceleration> accelerations = new Vector<>();
+    private final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>());
+    private final List<Acceleration> accelerations = Collections.synchronizedList(new ArrayList<Acceleration>());
     private final ExecutorService cachedThreadPool = Executors.newCachedThreadPool();
     private Channel channel;
     private GoogleApiClient mGoogleApiClient;
@@ -70,36 +70,43 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private Sensor accelerometer;
     private DatagramSocket datagramSocket;
     private boolean touchWasOnScreen;
+    private boolean newTouchThisSample;
     private Touch touch = NO_TOUCH;
 
-    private static Rotation avgRotation(final List<Rotation> rotations) {
+    private Rotation avgAndResetRotation() {
         float x = 0;
         float y = 0;
         float z = 0;
-        for (final Rotation rotation : rotations) {
-            x += rotation.x;
-            y += rotation.y;
-            z += rotation.z;
+        synchronized (this.rotations) {
+            for (final Rotation rotation : this.rotations) {
+                x += rotation.x;
+                y += rotation.y;
+                z += rotation.z;
+            }
+            x /= this.rotations.size();
+            y /= this.rotations.size();
+            z /= this.rotations.size();
+            this.rotations.clear();
+            return new Rotation(x, y, z);
         }
-        x /= rotations.size();
-        y /= rotations.size();
-        z /= rotations.size();
-        return new Rotation(x, y, z);
     }
 
-    private static Acceleration avgAcceleration(final List<Acceleration> accelerations) {
+    private Acceleration avgAndResetAcceleration() {
         float x = 0;
         float y = 0;
         float z = 0;
-        for (final Acceleration acceleration : accelerations) {
-            x += acceleration.x;
-            y += acceleration.y;
-            z += acceleration.z;
+        synchronized (this.accelerations) {
+            for (final Acceleration acceleration : this.accelerations) {
+                x += acceleration.x;
+                y += acceleration.y;
+                z += acceleration.z;
+            }
+            x /= this.accelerations.size();
+            y /= this.accelerations.size();
+            z /= this.accelerations.size();
+            this.accelerations.clear();
+            return new Acceleration(x, y, z);
         }
-        x /= accelerations.size();
-        y /= accelerations.size();
-        z /= accelerations.size();
-        return new Acceleration(x, y, z);
     }
 
     @Override
@@ -117,7 +124,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             @Override
             public boolean onTouch(final View view, final MotionEvent motionEvent) {
                 MainActivity.this.touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (MainActivity.this.touchWasOnScreen ? 1 : 0));
-                MainActivity.this.touchWasOnScreen = true;
+                MainActivity.this.newTouchThisSample = true;
                 return true;
             }
         });
@@ -246,20 +253,26 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final class SendDataRunnable implements Runnable {
         @Override
         public void run() {
-            final Rotation avgRotation = avgRotation(new ArrayList<>(MainActivity.this.rotations));
-            final Acceleration avgAcceleration = avgAcceleration(new ArrayList<>(MainActivity.this.accelerations));
+            if (rotations.size() > 0 && accelerations.size() > 0) {
+                final Rotation avgRotation = MainActivity.this.avgAndResetRotation();
+                final Acceleration avgAcceleration = MainActivity.this.avgAndResetAcceleration();
 
-            if (BuildConfig.DEBUG) {
-                Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f", avgRotation.x, avgRotation.y, avgRotation.z, avgAcceleration.x, avgAcceleration.y, avgAcceleration.z));
+                if (BuildConfig.DEBUG) {
+                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f", avgRotation.x, avgRotation.y, avgRotation.z, avgAcceleration.x, avgAcceleration.y, avgAcceleration.z));
+                }
+
+                MainActivity.this.cachedThreadPool.execute(new UDPRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
+                MainActivity.this.cachedThreadPool.execute(new ChannelRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
+
+                if (MainActivity.this.newTouchThisSample) {
+                    MainActivity.this.touchWasOnScreen = true;
+                    MainActivity.this.newTouchThisSample = false;
+                }
+                if (MainActivity.this.touch.equals(NO_TOUCH)) {
+                    MainActivity.this.touchWasOnScreen = false;
+                }
+                MainActivity.this.touch = NO_TOUCH;
             }
-
-            MainActivity.this.cachedThreadPool.execute(new UDPRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
-            MainActivity.this.cachedThreadPool.execute(new ChannelRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
-
-            if (MainActivity.this.touch.equals(NO_TOUCH)) {
-                MainActivity.this.touchWasOnScreen = false;
-            }
-            MainActivity.this.touch = NO_TOUCH;
         }
     }
 
@@ -323,20 +336,23 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         public void run() {
             try {
                 final DataOutputStream outputStream = MainActivity.this.channelOutputStream;
-                outputStream.writeFloat(this.rotation.x);
-                outputStream.writeFloat(this.rotation.y);
-                outputStream.writeFloat(this.rotation.z);
-                outputStream.writeLong(this.rotation.timestamp);
-                outputStream.writeFloat(this.acceleration.x);
-                outputStream.writeFloat(this.acceleration.y);
-                outputStream.writeFloat(this.acceleration.z);
-                outputStream.writeLong(this.acceleration.timestamp);
-                outputStream.writeFloat(this.touch.x);
-                outputStream.writeFloat(this.touch.y);
-                outputStream.writeByte(this.touch.state);
-                outputStream.writeLong(this.touch.timestamp);
+                if (outputStream != null) {
+                    outputStream.writeFloat(this.rotation.x);
+                    outputStream.writeFloat(this.rotation.y);
+                    outputStream.writeFloat(this.rotation.z);
+                    outputStream.writeLong(this.rotation.timestamp);
+                    outputStream.writeFloat(this.acceleration.x);
+                    outputStream.writeFloat(this.acceleration.y);
+                    outputStream.writeFloat(this.acceleration.z);
+                    outputStream.writeLong(this.acceleration.timestamp);
+                    outputStream.writeFloat(this.touch.x);
+                    outputStream.writeFloat(this.touch.y);
+                    outputStream.writeByte(this.touch.state);
+                    outputStream.writeLong(this.touch.timestamp);
+                } else {
+                    Log.i("Warning", "No channelOutputStream available");
+                }
             } catch (final IOException e) {
-                e.printStackTrace();
             }
         }
     }
