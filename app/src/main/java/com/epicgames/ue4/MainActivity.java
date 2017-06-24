@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     public static final String TAG = "WearApp";
-    private static final String IP_ADDRESS = "192.168.188.36";
+    private static final String IP_ADDRESS = "192.168.178.128";
     private static final int PORT = 55056;
     private static final InetAddress INET_ADDRESS;
     private static final long SEND_TIME_THRESHOLD = 1000 / 60; // 60 times per 1000 millisecond (= 60 times per second)
@@ -72,42 +72,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private boolean touchWasOnScreen;
     private boolean newTouchThisSample;
     private Touch touch = NO_TOUCH;
-
-    private Rotation avgAndResetRotation() {
-        float x = 0;
-        float y = 0;
-        float z = 0;
-        synchronized (this.rotations) {
-            for (final Rotation rotation : this.rotations) {
-                x += rotation.x;
-                y += rotation.y;
-                z += rotation.z;
-            }
-            x /= this.rotations.size();
-            y /= this.rotations.size();
-            z /= this.rotations.size();
-            this.rotations.clear();
-            return new Rotation(x, y, z);
-        }
-    }
-
-    private Acceleration avgAndResetAcceleration() {
-        float x = 0;
-        float y = 0;
-        float z = 0;
-        synchronized (this.accelerations) {
-            for (final Acceleration acceleration : this.accelerations) {
-                x += acceleration.x;
-                y += acceleration.y;
-                z += acceleration.z;
-            }
-            x /= this.accelerations.size();
-            y /= this.accelerations.size();
-            z /= this.accelerations.size();
-            this.accelerations.clear();
-            return new Acceleration(x, y, z);
-        }
-    }
 
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
@@ -180,13 +144,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
     @Override
     public void onSensorChanged(final SensorEvent sensorEvent) {
-        if (this.node == null) {
-            return;
-        }
-        if (this.node.getId() == null) {
-            return;
-        }
-
         switch (sensorEvent.sensor.getType()) {
             case Sensor.TYPE_ROTATION_VECTOR:
                 final float[] rotation = new float[3];
@@ -253,12 +210,12 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final class SendDataRunnable implements Runnable {
         @Override
         public void run() {
-            if (rotations.size() > 0 && accelerations.size() > 0) {
-                final Rotation avgRotation = MainActivity.this.avgAndResetRotation();
-                final Acceleration avgAcceleration = MainActivity.this.avgAndResetAcceleration();
+            if (!rotations.isEmpty() && !accelerations.isEmpty()) {
+                final Rotation avgRotation = avgAndResetRotation();
+                final Acceleration avgAcceleration = avgAndResetAcceleration();
 
                 if (BuildConfig.DEBUG) {
-                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f", avgRotation.x, avgRotation.y, avgRotation.z, avgAcceleration.x, avgAcceleration.y, avgAcceleration.z));
+                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, avgAcceleration.x, avgAcceleration.y, avgAcceleration.z, avgRotation.timestamp));
                 }
 
                 MainActivity.this.cachedThreadPool.execute(new UDPRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
@@ -272,6 +229,42 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                     MainActivity.this.touchWasOnScreen = false;
                 }
                 MainActivity.this.touch = NO_TOUCH;
+            }
+        }
+
+        private Rotation avgAndResetRotation() {
+            float x = 0;
+            float y = 0;
+            float z = 0;
+            synchronized (rotations) {
+                for (final Rotation rotation : rotations) {
+                    x += rotation.x;
+                    y += rotation.y;
+                    z += rotation.z;
+                }
+                x /= rotations.size();
+                y /= rotations.size();
+                z /= rotations.size();
+                rotations.clear();
+                return new Rotation(x, y, z, rotations.get(rotations.size()-1).timestamp);
+            }
+        }
+
+        private Acceleration avgAndResetAcceleration() {
+            float x = 0;
+            float y = 0;
+            float z = 0;
+            synchronized (accelerations) {
+                for (final Acceleration acceleration : accelerations) {
+                    x += acceleration.x;
+                    y += acceleration.y;
+                    z += acceleration.z;
+                }
+                x /= accelerations.size();
+                y /= accelerations.size();
+                z /= accelerations.size();
+                accelerations.clear();
+                return new Acceleration(x, y, z, accelerations.get(accelerations.size()-1).timestamp);
             }
         }
     }
