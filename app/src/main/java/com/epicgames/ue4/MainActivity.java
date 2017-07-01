@@ -42,7 +42,7 @@ import java.util.concurrent.TimeUnit;
 
 public final class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     public static final String TAG = "WearApp";
-    private static final String IP_ADDRESS = "192.168.178.128";
+    private static final String IP_ADDRESS = "192.168.178.29";
     private static final int PORT = 55056;
     private static final InetAddress INET_ADDRESS;
     private static final long SEND_TIME_THRESHOLD = 1000 / 60; // 60 times per 1000 millisecond (= 60 times per second)
@@ -245,8 +245,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 x /= rotations.size();
                 y /= rotations.size();
                 z /= rotations.size();
+                final Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size()-1).timestamp);
                 rotations.clear();
-                return new Rotation(x, y, z, rotations.get(rotations.size()-1).timestamp);
+                return rotation;
             }
         }
 
@@ -263,8 +264,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 x /= accelerations.size();
                 y /= accelerations.size();
                 z /= accelerations.size();
+                final Acceleration acceleration = new Acceleration(x, y, z, accelerations.get(accelerations.size()-1).timestamp);
                 accelerations.clear();
-                return new Acceleration(x, y, z, accelerations.get(accelerations.size()-1).timestamp);
+                return acceleration;
             }
         }
     }
