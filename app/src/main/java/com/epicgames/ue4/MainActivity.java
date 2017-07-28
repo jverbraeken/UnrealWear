@@ -45,7 +45,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final String IP_ADDRESS = "192.168.178.29";
     private static final int PORT = 55056;
     private static final InetAddress INET_ADDRESS;
-    private static final long SEND_TIME_THRESHOLD = 1000 / 60; // 60 times per 1000 millisecond (= 60 times per second)
+    private static final long SEND_TIME_THRESHOLD = 1000 / 20; // 20 times per 1000 millisecond (= 20 times per second)
     private static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
 
     static {
