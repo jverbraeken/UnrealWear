@@ -10,7 +10,7 @@ final class Rotation {
         this.x = x;
         this.y = y;
         this.z = z;
-        this.timestamp = System.currentTimeMillis();
+        timestamp = System.currentTimeMillis();
     }
 
     Rotation(final float x, final float y, final float z, final long timestamp) {

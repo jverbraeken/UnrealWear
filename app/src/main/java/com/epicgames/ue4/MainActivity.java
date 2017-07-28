@@ -12,15 +12,24 @@ import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.View.OnTouchListener;
 import android.widget.ImageView;
 
+import com.epicgames.ue4.R.id;
+import com.epicgames.ue4.R.layout;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.GoogleApiClient.Builder;
+import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
+import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Channel;
+import com.google.android.gms.wearable.Channel.GetOutputStreamResult;
 import com.google.android.gms.wearable.ChannelApi;
+import com.google.android.gms.wearable.ChannelApi.OpenChannelResult;
 import com.google.android.gms.wearable.Node;
 import com.google.android.gms.wearable.NodeApi;
+import com.google.android.gms.wearable.NodeApi.GetConnectedNodesResult;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.ByteArrayOutputStream;
@@ -40,7 +49,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-public final class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
+public final class MainActivity extends WearableActivity implements SensorEventListener, ConnectionCallbacks, OnConnectionFailedListener {
     public static final String TAG = "WearApp";
     private static final String IP_ADDRESS = "192.168.178.29";
     private static final int PORT = 55056;
@@ -52,7 +61,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         InetAddress tmp = null;
         try {
             tmp = InetAddress.getByName(IP_ADDRESS);
-        } catch (final UnknownHostException e) {
+        } catch (UnknownHostException e) {
             e.printStackTrace();
         }
         INET_ADDRESS = tmp;
@@ -76,56 +85,57 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        this.setContentView(R.layout.activity_main);
-        this.setAmbientEnabled();
+        setContentView(layout.activity_main);
+        setAmbientEnabled();
 
-        this.mSensorManager = (SensorManager) this.getSystemService(Context.SENSOR_SERVICE);
-        this.gyroscope = this.mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
-        this.accelerometer = this.mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        mSensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        gyroscope = mSensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        accelerometer = mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 
-        final ImageView imageView = (ImageView) this.findViewById(R.id.imageView);
-        imageView.setOnTouchListener(new View.OnTouchListener() {
+        final ImageView imageView = (ImageView) findViewById(id.imageView);
+        imageView.setOnTouchListener(new OnTouchListener() {
             @Override
-            public boolean onTouch(final View view, final MotionEvent motionEvent) {
-                MainActivity.this.touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (MainActivity.this.touchWasOnScreen ? 1 : 0));
-                MainActivity.this.newTouchThisSample = true;
+            public boolean onTouch(View view, MotionEvent motionEvent) {
+                touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (touchWasOnScreen ? 1 : 0));
+                newTouchThisSample = true;
                 return true;
             }
         });
 
-        this.mGoogleApiClient = new GoogleApiClient.Builder(this)
+        mGoogleApiClient = new Builder(this)
                 .addApi(Wearable.API)
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
                 .build();
-        this.mGoogleApiClient.connect();
 
         try {
-            this.datagramSocket = new DatagramSocket(PORT);
-            this.datagramSocket.setBroadcast(true);
+            datagramSocket = new DatagramSocket(PORT);
+            datagramSocket.setBroadcast(true);
         } catch (final SocketException e) {
             e.printStackTrace();
         }
 
-        final ScheduledExecutorService service = Executors.newScheduledThreadPool(2);
+        ScheduledExecutorService service = Executors.newScheduledThreadPool(2);
         service.scheduleAtFixedRate(new SendDataRunnable(), 0, SEND_TIME_THRESHOLD, TimeUnit.MILLISECONDS);
     }
 
     @Override
     protected void onStart() {
         super.onStart();
+
+        mGoogleApiClient.connect();
     }
 
     @Override
-    public void onConnected(@Nullable final Bundle bundle) {
-        Wearable.NodeApi.getConnectedNodes(this.mGoogleApiClient)
-                .setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
+    public void onConnected(@Nullable Bundle bundle) {
+        Wearable.NodeApi.getConnectedNodes(mGoogleApiClient)
+                .setResultCallback(new ResultCallback<GetConnectedNodesResult>() {
                                        @Override
-                                       public void onResult(@NonNull final NodeApi.GetConnectedNodesResult r) {
-                                           for (final Node node : r.getNodes()) {
+                                       public void onResult(@NonNull GetConnectedNodesResult r) {
+                                           for (Node node : r.getNodes()) {
                                                MainActivity.this.node = node;
-                                               final Runnable task = new ChannelCreateRunnable();
-                                               MainActivity.this.cachedThreadPool.execute(task);
+                                               Runnable task = new ChannelCreateRunnable();
+                                               cachedThreadPool.execute(task);
                                            }
                                        }
                                    }
@@ -133,27 +143,27 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     }
 
     @Override
-    public void onConnectionSuspended(final int i) {
+    public void onConnectionSuspended(int i) {
 
     }
 
     @Override
-    public void onConnectionFailed(@NonNull final ConnectionResult connectionResult) {
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
 
     }
 
     @Override
-    public void onSensorChanged(final SensorEvent sensorEvent) {
+    public void onSensorChanged(SensorEvent sensorEvent) {
         switch (sensorEvent.sensor.getType()) {
             case Sensor.TYPE_ROTATION_VECTOR:
-                final float[] rotation = new float[3];
+                float[] rotation = new float[3];
                 System.arraycopy(sensorEvent.values, 0, rotation, 0, 3);
-                this.storeRotation(rotation);
+                storeRotation(rotation);
                 break;
             case Sensor.TYPE_ACCELEROMETER:
-                final float[] acceleration = new float[3];
+                float[] acceleration = new float[3];
                 System.arraycopy(sensorEvent.values, 0, acceleration, 0, 3);
-                this.storeAcceleration(acceleration);
+                storeAcceleration(acceleration);
                 break;
             default:
                 break;
@@ -170,11 +180,11 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         rotation[0] = orientation[0] * 180.0f / (float) Math.PI; //Yaw
         rotation[1] = orientation[1] * 180.0f / (float) Math.PI; //Pitch
         rotation[2] = orientation[2] * 180.0f / (float) Math.PI; //Roll
-        this.rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
+        rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
     }
 
     private void storeAcceleration(final float[] values) {
-        this.accelerations.add(new Acceleration(values[0], values[1], values[2]));
+        accelerations.add(new Acceleration(values[0], values[1], values[2]));
     }
 
     @Override
@@ -185,15 +195,15 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     @Override
     protected void onResume() {
         super.onResume();
-        this.mGoogleApiClient.connect();
+        mGoogleApiClient.connect();
         Log.d(TAG, "resumed");
-        this.mSensorManager.registerListener(this, this.gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
-        this.mSensorManager.registerListener(this, this.accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+        mSensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
+        mSensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
     protected void onPause() {
-        this.mSensorManager.unregisterListener(this);
+        mSensorManager.unregisterListener(this);
         Log.d(TAG, "paused");
         super.onPause();
     }
@@ -201,9 +211,21 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final class ChannelCreateRunnable implements Runnable {
         @Override
         public void run() {
-            final ChannelApi.OpenChannelResult result = Wearable.ChannelApi.openChannel(MainActivity.this.mGoogleApiClient, MainActivity.this.node.getId(), "WEAR_ORIENTATION").await();
-            MainActivity.this.channel = result.getChannel();
-            MainActivity.this.channelOutputStream = new DataOutputStream(MainActivity.this.channel.getOutputStream(MainActivity.this.mGoogleApiClient).await().getOutputStream());
+            Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").setResultCallback(new ResultCallback<OpenChannelResult>() {
+                @Override
+                public void onResult(@NonNull OpenChannelResult openChannelResult) {
+                    Log.d(TAG, "channel found");
+                    channel = openChannelResult.getChannel();
+                    channel.getOutputStream(mGoogleApiClient).setResultCallback(new ResultCallback<GetOutputStreamResult>() {
+                        @Override
+                        public void onResult(@NonNull GetOutputStreamResult getOutputStreamResult) {
+                            Log.d(TAG, "sendMessageToDevice: onResult: onResult: onResult");
+
+                            channelOutputStream = new DataOutputStream(getOutputStreamResult.getOutputStream());
+                        }
+                    });
+                }
+            });
         }
     }
 
@@ -211,33 +233,33 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         @Override
         public void run() {
             if (!rotations.isEmpty() && !accelerations.isEmpty()) {
-                final Rotation avgRotation = avgAndResetRotation();
-                final Acceleration avgAcceleration = avgAndResetAcceleration();
+                Rotation avgRotation = avgAndResetRotation();
+                Acceleration avgAcceleration = avgAndResetAcceleration();
 
                 if (BuildConfig.DEBUG) {
                     Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, avgAcceleration.x, avgAcceleration.y, avgAcceleration.z, avgRotation.timestamp));
                 }
 
-                MainActivity.this.cachedThreadPool.execute(new UDPRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
-                MainActivity.this.cachedThreadPool.execute(new ChannelRunnable(avgRotation, avgAcceleration, MainActivity.this.touch));
+                cachedThreadPool.execute(new UDPRunnable(avgRotation, avgAcceleration, touch));
+                cachedThreadPool.execute(new ChannelRunnable(avgRotation, avgAcceleration, touch));
 
-                if (MainActivity.this.newTouchThisSample) {
-                    MainActivity.this.touchWasOnScreen = true;
-                    MainActivity.this.newTouchThisSample = false;
+                if (newTouchThisSample) {
+                    touchWasOnScreen = true;
+                    newTouchThisSample = false;
                 }
-                if (MainActivity.this.touch.equals(NO_TOUCH)) {
-                    MainActivity.this.touchWasOnScreen = false;
+                if (touch.equals(NO_TOUCH)) {
+                    touchWasOnScreen = false;
                 }
-                MainActivity.this.touch = NO_TOUCH;
+                touch = NO_TOUCH;
             }
         }
 
         private Rotation avgAndResetRotation() {
-            float x = 0;
-            float y = 0;
-            float z = 0;
             synchronized (rotations) {
-                for (final Rotation rotation : rotations) {
+                float x = 0;
+                float y = 0;
+                float z = 0;
+                for (Rotation rotation : rotations) {
                     x += rotation.x;
                     y += rotation.y;
                     z += rotation.z;
@@ -245,18 +267,18 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 x /= rotations.size();
                 y /= rotations.size();
                 z /= rotations.size();
-                final Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size()-1).timestamp);
+                Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size()-1).timestamp);
                 rotations.clear();
                 return rotation;
             }
         }
 
         private Acceleration avgAndResetAcceleration() {
-            float x = 0;
-            float y = 0;
-            float z = 0;
             synchronized (accelerations) {
-                for (final Acceleration acceleration : accelerations) {
+                float x = 0;
+                float y = 0;
+                float z = 0;
+                for (Acceleration acceleration : accelerations) {
                     x += acceleration.x;
                     y += acceleration.y;
                     z += acceleration.z;
@@ -264,7 +286,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 x /= accelerations.size();
                 y /= accelerations.size();
                 z /= accelerations.size();
-                final Acceleration acceleration = new Acceleration(x, y, z, accelerations.get(accelerations.size()-1).timestamp);
+                Acceleration acceleration = new Acceleration(x, y, z, accelerations.get(accelerations.size()-1).timestamp);
                 accelerations.clear();
                 return acceleration;
             }
@@ -276,7 +298,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         private final Acceleration acceleration;
         private final Touch touch;
 
-        UDPRunnable(final Rotation rotation, final Acceleration acceleration, final Touch touch) {
+        UDPRunnable(Rotation rotation, Acceleration acceleration, Touch touch) {
             this.rotation = rotation;
             this.acceleration = acceleration;
             this.touch = touch;
@@ -286,31 +308,31 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         public void run() {
             try (ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
                  DataOutputStream dataOutputStream = new DataOutputStream(byteArrayOutputStream)) {
-                dataOutputStream.writeFloat(this.rotation.x);
-                dataOutputStream.writeFloat(this.rotation.y);
-                dataOutputStream.writeFloat(this.rotation.z);
-                dataOutputStream.writeLong(this.rotation.timestamp);
+                dataOutputStream.writeFloat(rotation.x);
+                dataOutputStream.writeFloat(rotation.y);
+                dataOutputStream.writeFloat(rotation.z);
+                dataOutputStream.writeLong(rotation.timestamp);
 
-                dataOutputStream.writeFloat(this.acceleration.x);
-                dataOutputStream.writeFloat(this.acceleration.y);
-                dataOutputStream.writeFloat(this.acceleration.z);
-                dataOutputStream.writeLong(this.acceleration.timestamp);
+                dataOutputStream.writeFloat(acceleration.x);
+                dataOutputStream.writeFloat(acceleration.y);
+                dataOutputStream.writeFloat(acceleration.z);
+                dataOutputStream.writeLong(acceleration.timestamp);
 
-                if (MainActivity.this.touchWasOnScreen && this.touch.equals(NO_TOUCH)) {
+                if (touchWasOnScreen && touch.equals(NO_TOUCH)) {
                     dataOutputStream.writeFloat(-1);
                     dataOutputStream.writeFloat(-1);
                     dataOutputStream.writeByte(2);
                 } else {
-                    dataOutputStream.writeFloat(this.touch.x);
-                    dataOutputStream.writeFloat(this.touch.y);
-                    dataOutputStream.writeByte(this.touch.state);
+                    dataOutputStream.writeFloat(touch.x);
+                    dataOutputStream.writeFloat(touch.y);
+                    dataOutputStream.writeByte(touch.state);
                 }
-                dataOutputStream.writeLong(this.touch.timestamp);
+                dataOutputStream.writeLong(touch.timestamp);
 
-                final byte[] byteArray = byteArrayOutputStream.toByteArray();
-                final byte[] bytes = ByteBuffer.allocate(byteArray.length).put(byteArray).array();
-                MainActivity.this.datagramSocket.send(new DatagramPacket(bytes, byteArray.length, INET_ADDRESS, PORT));
-            } catch (final IOException e) {
+                byte[] byteArray = byteArrayOutputStream.toByteArray();
+                byte[] bytes = ByteBuffer.allocate(byteArray.length).put(byteArray).array();
+                datagramSocket.send(new DatagramPacket(bytes, byteArray.length, INET_ADDRESS, PORT));
+            } catch (IOException e) {
                 e.printStackTrace();
             }
         }
@@ -321,7 +343,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         private final Acceleration acceleration;
         private final Touch touch;
 
-        ChannelRunnable(final Rotation rotation, final Acceleration acceleration, final Touch touch) {
+        ChannelRunnable(Rotation rotation, Acceleration acceleration, Touch touch) {
             this.rotation = rotation;
             this.acceleration = acceleration;
             this.touch = touch;
@@ -330,24 +352,26 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         @Override
         public void run() {
             try {
-                final DataOutputStream outputStream = MainActivity.this.channelOutputStream;
+                final DataOutputStream outputStream = channelOutputStream;
                 if (outputStream != null) {
-                    outputStream.writeFloat(this.rotation.x);
-                    outputStream.writeFloat(this.rotation.y);
-                    outputStream.writeFloat(this.rotation.z);
-                    outputStream.writeLong(this.rotation.timestamp);
-                    outputStream.writeFloat(this.acceleration.x);
-                    outputStream.writeFloat(this.acceleration.y);
-                    outputStream.writeFloat(this.acceleration.z);
-                    outputStream.writeLong(this.acceleration.timestamp);
-                    outputStream.writeFloat(this.touch.x);
-                    outputStream.writeFloat(this.touch.y);
-                    outputStream.writeByte(this.touch.state);
-                    outputStream.writeLong(this.touch.timestamp);
+                    outputStream.writeFloat(rotation.x);
+                    outputStream.writeFloat(rotation.y);
+                    outputStream.writeFloat(rotation.z);
+                    outputStream.writeLong(rotation.timestamp);
+                    outputStream.writeFloat(acceleration.x);
+                    outputStream.writeFloat(acceleration.y);
+                    outputStream.writeFloat(acceleration.z);
+                    outputStream.writeLong(acceleration.timestamp);
+                    outputStream.writeFloat(touch.x);
+                    outputStream.writeFloat(touch.y);
+                    outputStream.writeByte(touch.state);
+                    outputStream.writeLong(touch.timestamp);
+                    outputStream.flush();
                 } else {
                     Log.i("Warning", "No channelOutputStream available");
                 }
             } catch (final IOException e) {
+                e.printStackTrace();
             }
         }
     }
