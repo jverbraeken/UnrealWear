@@ -25,10 +25,8 @@ import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListe
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Channel;
 import com.google.android.gms.wearable.Channel.GetOutputStreamResult;
-import com.google.android.gms.wearable.ChannelApi;
 import com.google.android.gms.wearable.ChannelApi.OpenChannelResult;
 import com.google.android.gms.wearable.Node;
-import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.NodeApi.GetConnectedNodesResult;
 import com.google.android.gms.wearable.Wearable;
 
@@ -54,8 +52,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final String IP_ADDRESS = "192.168.178.29";
     private static final int PORT = 55056;
     private static final InetAddress INET_ADDRESS;
-    private static final long SEND_TIME_THRESHOLD = 1000 / 20; // 20 times per 1000 millisecond (= 20 times per second)
+    private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
+    private static final float ALPHA = 0.8f;
 
     static {
         InetAddress tmp = null;
@@ -68,7 +67,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     }
 
     private final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>());
-    private final List<Acceleration> accelerations = Collections.synchronizedList(new ArrayList<Acceleration>());
+    private Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
+    private Acceleration acceleration = new Acceleration(0, 0, 0);
     private final ExecutorService cachedThreadPool = Executors.newCachedThreadPool();
     private Channel channel;
     private GoogleApiClient mGoogleApiClient;
@@ -161,9 +161,12 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 storeRotation(rotation);
                 break;
             case Sensor.TYPE_ACCELEROMETER:
-                float[] acceleration = new float[3];
-                System.arraycopy(sensorEvent.values, 0, acceleration, 0, 3);
-                storeAcceleration(acceleration);
+                accelerationWithGravity.x = ALPHA * accelerationWithGravity.x + (1 - ALPHA) * sensorEvent.values[0];
+                accelerationWithGravity.y = ALPHA * accelerationWithGravity.y + (1 - ALPHA) * sensorEvent.values[1];
+                accelerationWithGravity.z = ALPHA * accelerationWithGravity.z + (1 - ALPHA) * sensorEvent.values[2];
+                acceleration.x = sensorEvent.values[0] - accelerationWithGravity.x;
+                acceleration.y = sensorEvent.values[1] - accelerationWithGravity.y;
+                acceleration.z = sensorEvent.values[2] - accelerationWithGravity.z;
                 break;
             default:
                 break;
@@ -181,10 +184,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         rotation[1] = orientation[1] * 180.0f / (float) Math.PI; //Pitch
         rotation[2] = orientation[2] * 180.0f / (float) Math.PI; //Roll
         rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
-    }
-
-    private void storeAcceleration(final float[] values) {
-        accelerations.add(new Acceleration(values[0], values[1], values[2]));
     }
 
     @Override
@@ -232,16 +231,15 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final class SendDataRunnable implements Runnable {
         @Override
         public void run() {
-            if (!rotations.isEmpty() && !accelerations.isEmpty()) {
-                Rotation avgRotation = avgAndResetRotation();
-                Acceleration avgAcceleration = avgAndResetAcceleration();
+            if (!rotations.isEmpty()) {
+                final Rotation avgRotation = avgAndResetRotation();
 
                 if (BuildConfig.DEBUG) {
-                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, avgAcceleration.x, avgAcceleration.y, avgAcceleration.z, avgRotation.timestamp));
+                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z, avgRotation.timestamp));
                 }
 
-                cachedThreadPool.execute(new UDPRunnable(avgRotation, avgAcceleration, touch));
-                cachedThreadPool.execute(new ChannelRunnable(avgRotation, avgAcceleration, touch));
+                cachedThreadPool.execute(new UDPRunnable(avgRotation, acceleration, touch));
+                cachedThreadPool.execute(new ChannelRunnable(avgRotation, acceleration, touch));
 
                 if (newTouchThisSample) {
                     touchWasOnScreen = true;
@@ -259,7 +257,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 float x = 0;
                 float y = 0;
                 float z = 0;
-                for (Rotation rotation : rotations) {
+                for (final Rotation rotation : rotations) {
                     x += rotation.x;
                     y += rotation.y;
                     z += rotation.z;
@@ -272,25 +270,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 return rotation;
             }
         }
-
-        private Acceleration avgAndResetAcceleration() {
-            synchronized (accelerations) {
-                float x = 0;
-                float y = 0;
-                float z = 0;
-                for (Acceleration acceleration : accelerations) {
-                    x += acceleration.x;
-                    y += acceleration.y;
-                    z += acceleration.z;
-                }
-                x /= accelerations.size();
-                y /= accelerations.size();
-                z /= accelerations.size();
-                Acceleration acceleration = new Acceleration(x, y, z, accelerations.get(accelerations.size()-1).timestamp);
-                accelerations.clear();
-                return acceleration;
-            }
-        }
     }
 
     private final class UDPRunnable implements Runnable {
@@ -298,7 +277,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         private final Acceleration acceleration;
         private final Touch touch;
 
-        UDPRunnable(Rotation rotation, Acceleration acceleration, Touch touch) {
+        UDPRunnable(final Rotation rotation, final Acceleration acceleration, final Touch touch) {
             this.rotation = rotation;
             this.acceleration = acceleration;
             this.touch = touch;

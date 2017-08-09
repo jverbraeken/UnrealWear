@@ -1,9 +1,9 @@
 package com.epicgames.ue4;
 
 class Acceleration {
-    final float x;
-    final float y;
-    final float z;
+    float x;
+    float y;
+    float z;
     final long timestamp;
 
     Acceleration(final float x, final float y, final float z) {
