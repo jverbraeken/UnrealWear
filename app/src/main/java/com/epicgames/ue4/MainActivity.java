@@ -113,7 +113,12 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         imageView.setOnTouchListener(new OnTouchListener() {
             @Override
             public boolean onTouch(final View view, final MotionEvent motionEvent) {
-                touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (touchWasOnScreen ? 1 : 0));
+                if (newTouchThisSample && motionEvent.getAction() == MotionEvent.ACTION_UP) {
+                    touch = NO_TOUCH;
+                    newTouchThisSample = false;
+                    return true;
+                }
+                touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (motionEvent.getAction() == MotionEvent.ACTION_UP ? 1 : 0));
                 newTouchThisSample = true;
                 return true;
             }
@@ -160,17 +165,17 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     }
 
     @Override
-    public void onConnectionSuspended(int i) {
+    public void onConnectionSuspended(final int i) {
 
     }
 
     @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+    public void onConnectionFailed(@NonNull final ConnectionResult connectionResult) {
 
     }
 
     @Override
-    public void onSensorChanged(SensorEvent sensorEvent) {
+    public void onSensorChanged(final SensorEvent sensorEvent) {
         switch (sensorEvent.sensor.getType()) {
             case Sensor.TYPE_ROTATION_VECTOR:
                 float[] rotation = new float[3];
@@ -425,13 +430,13 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         public void run() {
             Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").setResultCallback(new ResultCallback<OpenChannelResult>() {
                 @Override
-                public void onResult(@NonNull OpenChannelResult openChannelResult) {
+                public void onResult(@NonNull final OpenChannelResult openChannelResult) {
                     Log.d(TAG, "channel found");
                     channel = openChannelResult.getChannel();
                     channel.getOutputStream(mGoogleApiClient).setResultCallback(new ResultCallback<GetOutputStreamResult>() {
                         @Override
-                        public void onResult(@NonNull GetOutputStreamResult getOutputStreamResult) {
-                            Log.d(TAG, "sendMessageToDevice: onResult: onResult: onResult");
+                        public void onResult(@NonNull final GetOutputStreamResult getOutputStreamResult) {
+                            Log.d(TAG, "Creating DataOutputStream");
 
                             channelOutputStream = new DataOutputStream(getOutputStreamResult.getOutputStream());
                         }
@@ -448,20 +453,23 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 final Rotation avgRotation = avgAndResetRotation();
 
                 if (BuildConfig.DEBUG) {
-                    //Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z, avgRotation.timestamp));
+                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z, avgRotation.timestamp));
                 }
 
-                cachedThreadPool.execute(new UDPRunnable(avgRotation, acceleration, touch));
-                cachedThreadPool.execute(new ChannelRunnable(avgRotation, acceleration, touch));
+                synchronized (MainActivity.this) {
+                    if (newTouchThisSample) {
+                        touchWasOnScreen = true;
+                        newTouchThisSample = false;
+                    }
+                    if (touch.equals(NO_TOUCH)) {
+                        touchWasOnScreen = false;
+                    }
 
-                if (newTouchThisSample) {
-                    touchWasOnScreen = true;
-                    newTouchThisSample = false;
+                    cachedThreadPool.execute(new UDPRunnable(avgRotation, acceleration, touch));
+                    cachedThreadPool.execute(new ChannelRunnable(avgRotation, acceleration, touch));
+
+                    touch = NO_TOUCH;
                 }
-                if (touch.equals(NO_TOUCH)) {
-                    touchWasOnScreen = false;
-                }
-                touch = NO_TOUCH;
             }
         }
 
@@ -510,7 +518,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 dataOutputStream.writeFloat(acceleration.z);
                 dataOutputStream.writeLong(acceleration.timestamp);
 
-                if (touchWasOnScreen && touch.equals(NO_TOUCH)) {
+                if (touch.equals(NO_TOUCH)) {
                     dataOutputStream.writeFloat(-1);
                     dataOutputStream.writeFloat(-1);
                     dataOutputStream.writeByte(2);
@@ -554,9 +562,15 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                     outputStream.writeFloat(acceleration.y);
                     outputStream.writeFloat(acceleration.z);
                     outputStream.writeLong(acceleration.timestamp);
-                    outputStream.writeFloat(touch.x);
-                    outputStream.writeFloat(touch.y);
-                    outputStream.writeByte(touch.state);
+                    if (touch.equals(NO_TOUCH)) {
+                        outputStream.writeFloat(-1);
+                        outputStream.writeFloat(-1);
+                        outputStream.writeByte(2);
+                    } else {
+                        outputStream.writeFloat(touch.x);
+                        outputStream.writeFloat(touch.y);
+                        outputStream.writeByte(touch.state);
+                    }
                     outputStream.writeLong(touch.timestamp);
                     outputStream.flush();
                 } else {
