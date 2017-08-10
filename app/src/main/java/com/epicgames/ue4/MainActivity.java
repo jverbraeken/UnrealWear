@@ -5,6 +5,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.support.annotation.NonNull;
@@ -56,7 +57,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public static final int SENSITIVITY_MEDIUM = 13;
     public static final int SENSITIVITY_HARD = 15;
     private static final String IP_ADDRESS = "192.168.178.29";
-    private static final int PORT = 55056;
+    private static final int PORT = 55051;
     private static final InetAddress INET_ADDRESS;
     private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
@@ -97,6 +98,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private boolean newTouchThisSample;
     private Touch touch = NO_TOUCH;
     private long vibrationStartTime = 0L;
+    private static WifiManager.WifiLock wifiLock;
 
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
@@ -108,6 +110,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
+        keepWiFiOn(this, true);
 
         final ImageView imageView = (ImageView) findViewById(id.imageView);
         imageView.setOnTouchListener(new OnTouchListener() {
@@ -139,6 +142,25 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
         final ScheduledExecutorService service = Executors.newScheduledThreadPool(2);
         service.scheduleAtFixedRate(new SendDataRunnable(), 0, SEND_TIME_THRESHOLD, TimeUnit.MILLISECONDS);
+    }
+
+    public static void keepWiFiOn(Context context, boolean on) {
+        if (wifiLock == null) {
+            WifiManager wm = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+            if (wm != null) {
+                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TAG);
+                wifiLock.setReferenceCounted(true);
+            }
+        }
+        if (wifiLock != null) { // May be null if wm is null
+            if (on) {
+                wifiLock.acquire();
+                Log.d(TAG, "Acquired WiFi lock");
+            } else if (wifiLock.isHeld()) {
+                wifiLock.release();
+                Log.d(TAG, "Released WiFi lock");
+            }
+        }
     }
 
     @Override
