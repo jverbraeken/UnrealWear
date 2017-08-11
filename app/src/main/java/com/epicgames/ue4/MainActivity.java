@@ -9,6 +9,7 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.WifiManager.WifiLock;
 import android.os.Bundle;
 import android.os.Vibrator;
+import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.wearable.activity.WearableActivity;
@@ -87,7 +88,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private Channel channel;
     private GoogleApiClient googleApiClient;
     private Node node;
-    private DataInputStream channelInputStream;
     private DataOutputStream channelOutputStream;
     private SensorManager sensorManager;
     private Sensor gyroscope;
@@ -99,6 +99,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private Touch touch = NO_TOUCH;
     private long vibrationStartTime;
     private boolean doVibrateWhileShaking;
+    private boolean forceVibration;
 
     public static void keepWiFiOn(final Context context, final boolean on) {
         if (wifiLock == null) {
@@ -227,7 +228,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             if (queue.isShaking()) {
                 queue.clear();
                 Log.d(TAG, "Shaked!!!");
-                if (doVibrateWhileShaking) {
+                if (!forceVibration && doVibrateWhileShaking) {
                     if (System.currentTimeMillis() > vibrationStartTime + MAX_VIBRATION_TIME) {
                         vibrator.vibrate(MAX_VIBRATION_TIME);
                         vibrationStartTime = System.currentTimeMillis();
@@ -306,12 +307,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                             public void onResult(@NonNull final GetInputStreamResult inputStreamResult) {
                                 Log.d(TAG, "Creating DataInputStream");
 
-                                channelInputStream = new DataInputStream(inputStreamResult.getInputStream());
-                                try {
-                                    Log.d(TAG, Long.toString(channelInputStream.readLong()) + " asfasdfasdfasdf");
-                                } catch (final IOException e) {
-                                    e.printStackTrace();
-                                }
+                                final DataInputStream channelInputStream = new DataInputStream(inputStreamResult.getInputStream());
+                                cachedThreadPool.execute(new ReceiveDataRunnable(channelInputStream));
 
                             }
                         });
@@ -454,6 +451,40 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                     outputStream.flush();
                 } else {
                     Log.i("Warning", "No channelOutputStream available");
+                }
+            } catch (final IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+
+    private final class ReceiveDataRunnable implements Runnable {
+        private static final byte COM_REQUEST_VIBRATION = 1;
+        private static final byte COM_FIXED_TIME = 2;
+        private static final byte COM_INFINITY = 3;
+        private static final byte COM_STOP_VIBRATION = 4;
+        private final DataInputStream dataInputStream;
+
+        ReceiveDataRunnable(final DataInputStream dataInputStream) {
+            this.dataInputStream = dataInputStream;
+        }
+
+        @Override
+        public void run() {
+            try {
+                final byte request = dataInputStream.readByte();
+                if (request == COM_REQUEST_VIBRATION) {
+                    final byte duration = dataInputStream.readByte();
+                    if (duration == COM_FIXED_TIME) {
+                        vibrator.vibrate(dataInputStream.readInt());
+                    } else if (duration == COM_INFINITY) {
+                        forceVibration = true;
+                        vibrator.vibrate(Long.MAX_VALUE);
+                    }
+                } else if (request == COM_STOP_VIBRATION) {
+                    forceVibration = false;
+                    vibrator.cancel();
                 }
             } catch (final IOException e) {
                 e.printStackTrace();
