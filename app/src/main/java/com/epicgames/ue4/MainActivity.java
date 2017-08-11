@@ -27,6 +27,7 @@ import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
 import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Channel;
+import com.google.android.gms.wearable.Channel.GetInputStreamResult;
 import com.google.android.gms.wearable.Channel.GetOutputStreamResult;
 import com.google.android.gms.wearable.ChannelApi.OpenChannelResult;
 import com.google.android.gms.wearable.Node;
@@ -34,6 +35,7 @@ import com.google.android.gms.wearable.NodeApi.GetConnectedNodesResult;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -56,14 +58,15 @@ import java.util.concurrent.TimeUnit;
 public final class MainActivity extends WearableActivity implements SensorEventListener, ConnectionCallbacks, OnConnectionFailedListener {
     public static final String TAG = "WearApp";
     public static final int MINIMUM_SHAKING_SENSIVITY = 11;
+    public static final int MAX_VIBRATION_TIME = 99999;
+    public static final int VIBRATION_DELAY = 650;
     private static final String IP_ADDRESS = "192.168.178.29";
     private static final int PORT = 55051;
     private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
     private static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
     private static final InetAddress INET_ADDRESS;
-    public static final int MAX_VIBRATION_TIME = 99999;
-    public static final int VIBRATION_DELAY = 650;
+    private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
     private static WifiLock wifiLock;
 
     static {
@@ -82,8 +85,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
     private final Acceleration acceleration = new Acceleration(0, 0, 0);
     private Channel channel;
-    private GoogleApiClient mGoogleApiClient;
+    private GoogleApiClient googleApiClient;
     private Node node;
+    private DataInputStream channelInputStream;
     private DataOutputStream channelOutputStream;
     private SensorManager sensorManager;
     private Sensor gyroscope;
@@ -115,6 +119,18 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         }
     }
 
+    /**
+     * Returns true if the device is currently accelerating.
+     */
+    private static boolean isAccelerating(final SensorEvent event) {
+        final float ax = event.values[0];
+        final float ay = event.values[1];
+        final float az = event.values[2];
+
+        final double magnitudeSquared = ax * ax + ay * ay + az * az;
+        return magnitudeSquared > MINIMUM_SHAKING_SENSIVITY * MINIMUM_SHAKING_SENSIVITY;
+    }
+
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -142,7 +158,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             }
         });
 
-        mGoogleApiClient = new Builder(this)
+        googleApiClient = new Builder(this)
                 .addApi(Wearable.API)
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
@@ -163,19 +179,18 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     protected void onStart() {
         super.onStart();
 
-        mGoogleApiClient.connect();
+        googleApiClient.connect();
     }
 
     @Override
-    public void onConnected(@Nullable Bundle bundle) {
-        Wearable.NodeApi.getConnectedNodes(mGoogleApiClient)
+    public void onConnected(@Nullable final Bundle bundle) {
+        Wearable.NodeApi.getConnectedNodes(googleApiClient)
                 .setResultCallback(new ResultCallback<GetConnectedNodesResult>() {
                                        @Override
                                        public void onResult(@NonNull GetConnectedNodesResult r) {
-                                           for (Node node : r.getNodes()) {
+                                           for (final Node node : r.getNodes()) {
                                                MainActivity.this.node = node;
-                                               Runnable task = new ChannelCreateRunnable();
-                                               cachedThreadPool.execute(task);
+                                               cachedThreadPool.execute(new ChannelCreateRunnable());
                                            }
                                        }
                                    }
@@ -240,7 +255,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     @Override
     protected void onResume() {
         super.onResume();
-        mGoogleApiClient.connect();
+        googleApiClient.connect();
         Log.d(TAG, "resumed");
         sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
@@ -253,18 +268,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         super.onPause();
     }
 
-    /**
-     * Returns true if the device is currently accelerating.
-     */
-    private static boolean isAccelerating(final SensorEvent event) {
-        final float ax = event.values[0];
-        final float ay = event.values[1];
-        final float az = event.values[2];
-
-        final double magnitudeSquared = ax * ax + ay * ay + az * az;
-        return magnitudeSquared > MINIMUM_SHAKING_SENSIVITY * MINIMUM_SHAKING_SENSIVITY;
-    }
-
     @SuppressWarnings("NumericCastThatLosesPrecision")
     private void storeRotation(final float[] values) {
         final float[] rotMat = new float[9];
@@ -272,28 +275,55 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         final float[] orientation = new float[3];
         SensorManager.getOrientation(rotMat, orientation);
         final float[] rotation = new float[3];
-        rotation[0] = orientation[0] * 180.f / (float) Math.PI; //Yaw
-        rotation[1] = orientation[1] * 180.f / (float) Math.PI; //Pitch
-        rotation[2] = orientation[2] * 180.f / (float) Math.PI; //Roll
+        rotation[0] = orientation[0] * FROM_RADIANS_TO_DEGREES; //Yaw
+        rotation[1] = orientation[1] * FROM_RADIANS_TO_DEGREES; //Pitch
+        rotation[2] = orientation[2] * FROM_RADIANS_TO_DEGREES; //Roll
         rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
     }
 
     private final class ChannelCreateRunnable implements Runnable {
         @Override
         public void run() {
-            Wearable.ChannelApi.openChannel(mGoogleApiClient, node.getId(), "WEAR_ORIENTATION").setResultCallback(new ResultCallback<OpenChannelResult>() {
+            Wearable.ChannelApi.openChannel(googleApiClient, node.getId(), "WEAR_ORIENTATION").setResultCallback(new ResultCallback<OpenChannelResult>() {
                 @Override
                 public void onResult(@NonNull final OpenChannelResult openChannelResult) {
                     Log.d(TAG, "channel found");
                     channel = openChannelResult.getChannel();
-                    channel.getOutputStream(mGoogleApiClient).setResultCallback(new ResultCallback<GetOutputStreamResult>() {
-                        @Override
-                        public void onResult(@NonNull final GetOutputStreamResult outputStreamResult) {
-                            Log.d(TAG, "Creating DataOutputStream");
 
-                            channelOutputStream = new DataOutputStream(outputStreamResult.getOutputStream());
+                    if (channel == null) {
+                        Log.e(TAG, "Couldn't open a channel");
+                        try {
+                            Thread.sleep(500);
+                        } catch (final InterruptedException e) {
+                            Log.wtf(TAG, "ChannelCreateRunnable was interrupted...");
+                            e.printStackTrace();
                         }
-                    });
+                        cachedThreadPool.execute(new ChannelCreateRunnable());
+                    } else {
+                        Log.v(TAG, "Can open a channel");
+                        channel.getInputStream(googleApiClient).setResultCallback(new ResultCallback<GetInputStreamResult>() {
+                            @Override
+                            public void onResult(@NonNull final GetInputStreamResult inputStreamResult) {
+                                Log.d(TAG, "Creating DataInputStream");
+
+                                channelInputStream = new DataInputStream(inputStreamResult.getInputStream());
+                                try {
+                                    Log.d(TAG, Long.toString(channelInputStream.readLong()) + " asfasdfasdfasdf");
+                                } catch (final IOException e) {
+                                    e.printStackTrace();
+                                }
+
+                            }
+                        });
+                        channel.getOutputStream(googleApiClient).setResultCallback(new ResultCallback<GetOutputStreamResult>() {
+                            @Override
+                            public void onResult(@NonNull final GetOutputStreamResult outputStreamResult) {
+                                Log.d(TAG, "Creating DataOutputStream");
+
+                                channelOutputStream = new DataOutputStream(outputStreamResult.getOutputStream());
+                            }
+                        });
+                    }
                 }
             });
         }
