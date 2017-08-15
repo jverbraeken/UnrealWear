@@ -62,7 +62,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public static final int MAX_VIBRATION_TIME = 99999;
     public static final int VIBRATION_DELAY = 650;
     private static final String IP_ADDRESS = "192.168.178.29";
-    private static final int PORT = 55051;
+    private static final int PORT = 55056;
     private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
     private static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
@@ -105,6 +105,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         if (wifiLock == null) {
             final WifiManager wm = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
             if (wm != null) {
+                wm.setWifiEnabled(true);
+                Log.d(TAG, "Wifi should now be enabled...");
                 wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TAG);
                 wifiLock.setReferenceCounted(true);
             }
@@ -427,7 +429,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
         @Override
         public void run() {
-            try {
+            /*try {
                 final DataOutputStream outputStream = channelOutputStream;
                 if (outputStream != null) {
                     outputStream.writeFloat(rotation.x);
@@ -454,7 +456,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 }
             } catch (final IOException e) {
                 e.printStackTrace();
-            }
+            }*/
         }
     }
 
