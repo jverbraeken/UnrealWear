@@ -9,7 +9,6 @@ import android.net.wifi.WifiManager;
 import android.net.wifi.WifiManager.WifiLock;
 import android.os.Bundle;
 import android.os.Vibrator;
-import android.provider.ContactsContract;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.wearable.activity.WearableActivity;
@@ -429,7 +428,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
         @Override
         public void run() {
-            /*try {
+            try {
                 final DataOutputStream outputStream = channelOutputStream;
                 if (outputStream != null) {
                     outputStream.writeFloat(rotation.x);
@@ -456,7 +455,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 }
             } catch (final IOException e) {
                 e.printStackTrace();
-            }*/
+            }
         }
     }
 
@@ -475,18 +474,25 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         @Override
         public void run() {
             try {
-                final byte request = dataInputStream.readByte();
-                if (request == COM_REQUEST_VIBRATION) {
-                    final byte duration = dataInputStream.readByte();
-                    if (duration == COM_FIXED_TIME) {
-                        vibrator.vibrate(dataInputStream.readInt());
-                    } else if (duration == COM_INFINITY) {
-                        forceVibration = true;
-                        vibrator.vibrate(Long.MAX_VALUE);
+                while (true) {
+                    final byte request = dataInputStream.readByte();
+                    Log.d(TAG, "Request received! -> " + request);
+                    if (request == COM_REQUEST_VIBRATION) {
+                        final byte duration = dataInputStream.readByte();
+                        Log.d(TAG, "Duration received! -> " + duration);
+                        if (duration == COM_FIXED_TIME) {
+                            vibrator.vibrate(dataInputStream.readInt());
+                            Log.d(TAG, "Now vibrating with duration!");
+                        } else if (duration == COM_INFINITY) {
+                            forceVibration = true;
+                            vibrator.vibrate(3600000);
+                            Log.d(TAG, "Now vibrating!");
+                        }
+                    } else if (request == COM_STOP_VIBRATION) {
+                        forceVibration = false;
+                        vibrator.cancel();
+                        Log.d(TAG, "Vibrating cancelled");
                     }
-                } else if (request == COM_STOP_VIBRATION) {
-                    forceVibration = false;
-                    vibrator.cancel();
                 }
             } catch (final IOException e) {
                 e.printStackTrace();
