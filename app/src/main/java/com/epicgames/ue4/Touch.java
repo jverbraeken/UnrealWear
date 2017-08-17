@@ -1,15 +1,15 @@
 package com.epicgames.ue4;
 
-final class Touch {
-    final float x;
-    final float y;
+public final class Touch {
+    public final float x;
+    public final float y;
     /**
      * 0 = new touch
      * 1 = hold
      * 2 = released
      */
-    final byte state;
-    final long timestamp;
+    public final byte state;
+    public final long timestamp;
 
     Touch(final float x, final float y, final byte state) {
         this.x = x;
