@@ -80,7 +80,6 @@ public final class SendSensorDataRunnable implements Runnable {
                 outputStream.writeFloat(-1);
                 outputStream.writeByte(2);
             } else {
-                Log.d(TAG, "Writing touch");
                 outputStream.writeFloat(touch.x);
                 outputStream.writeFloat(touch.y);
                 outputStream.writeByte(touch.state);

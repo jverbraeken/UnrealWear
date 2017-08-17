@@ -43,7 +43,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 @SuppressWarnings({"InstanceVariableOfConcreteClass", "ClassWithoutLogger", "PublicConstructor", "ClassWithTooManyFields", "StaticVariableOfConcreteClass", "PublicMethodWithoutLogging"})
 public final class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
-    public static final String TAG = "WearApp";
+    public static final String TAG = "Foo";
     public static final int MINIMUM_SHAKING_SENSIVITY = 11;
     public static final int MAX_VIBRATION_TIME = 99999;
     public static final int VIBRATION_DELAY = 650;
@@ -177,11 +177,15 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                     Log.d(TAG, "Touch not getting through: " + isNewTouchThisSample() + ", " + motionEvent.getAction());
                     newTouchThisSample = false;
                     return true;
+                } else if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
+                    // Do nothing
+                    return true;
+                } else {
+                    touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (motionEvent.getAction() == MotionEvent.ACTION_UP ? 1 : 0));
+                    Log.d(TAG, "Touch registered");
+                    newTouchThisSample = true;
+                    return true;
                 }
-                touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (motionEvent.getAction() == MotionEvent.ACTION_UP ? 1 : 0));
-                Log.d(TAG, "Touch registered");
-                newTouchThisSample = true;
-                return true;
             }
         });
 
@@ -309,7 +313,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         rotation[0] = orientation[0] * FROM_RADIANS_TO_DEGREES; //Yaw
         rotation[1] = orientation[1] * FROM_RADIANS_TO_DEGREES; //Pitch
         rotation[2] = orientation[2] * FROM_RADIANS_TO_DEGREES; //Roll
-        getRotations().add(new Rotation(rotation[0], rotation[1], rotation[2]));
+        rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
     }
 
     public static List<Rotation> getRotations() {
