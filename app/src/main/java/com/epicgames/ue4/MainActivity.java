@@ -6,7 +6,6 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.net.wifi.WifiManager;
-import android.net.wifi.WifiManager.WifiLock;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.support.annotation.NonNull;
@@ -15,23 +14,15 @@ import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.View.OnTouchListener;
 import android.widget.ImageView;
 
-import com.epicgames.ue4.R.id;
-import com.epicgames.ue4.R.layout;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
-import com.google.android.gms.common.api.GoogleApiClient.Builder;
-import com.google.android.gms.common.api.GoogleApiClient.ConnectionCallbacks;
-import com.google.android.gms.common.api.GoogleApiClient.OnConnectionFailedListener;
 import com.google.android.gms.common.api.ResultCallback;
 import com.google.android.gms.wearable.Channel;
-import com.google.android.gms.wearable.Channel.GetInputStreamResult;
-import com.google.android.gms.wearable.Channel.GetOutputStreamResult;
-import com.google.android.gms.wearable.ChannelApi.OpenChannelResult;
+import com.google.android.gms.wearable.ChannelApi;
 import com.google.android.gms.wearable.Node;
-import com.google.android.gms.wearable.NodeApi.GetConnectedNodesResult;
+import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.ByteArrayOutputStream;
@@ -52,10 +43,11 @@ import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 @SuppressWarnings({"InstanceVariableOfConcreteClass", "ClassWithoutLogger", "PublicConstructor", "ClassWithTooManyFields", "StaticVariableOfConcreteClass", "PublicMethodWithoutLogging"})
-public final class MainActivity extends WearableActivity implements SensorEventListener, ConnectionCallbacks, OnConnectionFailedListener {
+public final class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     public static final String TAG = "WearApp";
     public static final int MINIMUM_SHAKING_SENSIVITY = 11;
     public static final int MAX_VIBRATION_TIME = 99999;
@@ -67,7 +59,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
     private static final InetAddress INET_ADDRESS;
     private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
-    private static WifiLock wifiLock;
+    private static WifiManager.WifiLock wifiLock;
 
     static {
         InetAddress tmp = null;
@@ -82,6 +74,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final SampleQueue queue = new SampleQueue();
     private final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
     private final ExecutorService cachedThreadPool = Executors.newCachedThreadPool();
+    private final ScheduledExecutorService scheduledExecutorService = new ScheduledThreadPoolExecutor(1);
     private final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
     private final Acceleration acceleration = new Acceleration(0, 0, 0);
     private Channel channel;
@@ -99,6 +92,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private long vibrationStartTime;
     private boolean doVibrateWhileShaking;
     private boolean forceVibration;
+    private volatile boolean cancelInfiniteVibration;
 
     public static void keepWiFiOn(final Context context, final boolean on) {
         if (wifiLock == null) {
@@ -136,7 +130,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(layout.activity_main);
+        setContentView(R.layout.activity_main);
         setAmbientEnabled();
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
@@ -145,8 +139,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         keepWiFiOn(this, true);
 
-        final ImageView imageView = (ImageView) findViewById(id.imageView);
-        imageView.setOnTouchListener(new OnTouchListener() {
+        final ImageView imageView = (ImageView) findViewById(R.id.imageView);
+        imageView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(final View view, final MotionEvent motionEvent) {
                 if (newTouchThisSample && motionEvent.getAction() == MotionEvent.ACTION_UP) {
@@ -160,7 +154,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             }
         });
 
-        googleApiClient = new Builder(this)
+        googleApiClient = new GoogleApiClient.Builder(this)
                 .addApi(Wearable.API)
                 .addConnectionCallbacks(this)
                 .addOnConnectionFailedListener(this)
@@ -187,9 +181,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     @Override
     public void onConnected(@Nullable final Bundle bundle) {
         Wearable.NodeApi.getConnectedNodes(googleApiClient)
-                .setResultCallback(new ResultCallback<GetConnectedNodesResult>() {
+                .setResultCallback(new ResultCallback<NodeApi.GetConnectedNodesResult>() {
                                        @Override
-                                       public void onResult(@NonNull GetConnectedNodesResult r) {
+                                       public void onResult(@NonNull NodeApi.GetConnectedNodesResult r) {
                                            for (final Node node : r.getNodes()) {
                                                MainActivity.this.node = node;
                                                cachedThreadPool.execute(new ChannelCreateRunnable());
@@ -266,6 +260,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     @Override
     protected void onPause() {
         sensorManager.unregisterListener(this);
+        vibrator.cancel();
+        cancelInfiniteVibration = true;
         Log.d(TAG, "paused");
         super.onPause();
     }
@@ -286,9 +282,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private final class ChannelCreateRunnable implements Runnable {
         @Override
         public void run() {
-            Wearable.ChannelApi.openChannel(googleApiClient, node.getId(), "WEAR_ORIENTATION").setResultCallback(new ResultCallback<OpenChannelResult>() {
+            Wearable.ChannelApi.openChannel(googleApiClient, node.getId(), "WEAR_ORIENTATION").setResultCallback(new ResultCallback<ChannelApi.OpenChannelResult>() {
                 @Override
-                public void onResult(@NonNull final OpenChannelResult openChannelResult) {
+                public void onResult(@NonNull final ChannelApi.OpenChannelResult openChannelResult) {
                     Log.d(TAG, "channel found");
                     channel = openChannelResult.getChannel();
 
@@ -303,9 +299,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                         cachedThreadPool.execute(new ChannelCreateRunnable());
                     } else {
                         Log.v(TAG, "Can open a channel");
-                        channel.getInputStream(googleApiClient).setResultCallback(new ResultCallback<GetInputStreamResult>() {
+                        channel.getInputStream(googleApiClient).setResultCallback(new ResultCallback<Channel.GetInputStreamResult>() {
                             @Override
-                            public void onResult(@NonNull final GetInputStreamResult inputStreamResult) {
+                            public void onResult(@NonNull final Channel.GetInputStreamResult inputStreamResult) {
                                 Log.d(TAG, "Creating DataInputStream");
 
                                 final DataInputStream channelInputStream = new DataInputStream(inputStreamResult.getInputStream());
@@ -313,9 +309,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
                             }
                         });
-                        channel.getOutputStream(googleApiClient).setResultCallback(new ResultCallback<GetOutputStreamResult>() {
+                        channel.getOutputStream(googleApiClient).setResultCallback(new ResultCallback<Channel.GetOutputStreamResult>() {
                             @Override
-                            public void onResult(@NonNull final GetOutputStreamResult outputStreamResult) {
+                            public void onResult(@NonNull final Channel.GetOutputStreamResult outputStreamResult) {
                                 Log.d(TAG, "Creating DataOutputStream");
 
                                 channelOutputStream = new DataOutputStream(outputStreamResult.getOutputStream());
@@ -485,17 +481,31 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                             Log.d(TAG, "Now vibrating with duration!");
                         } else if (duration == COM_INFINITY) {
                             forceVibration = true;
-                            vibrator.vibrate(3600000);
+                            cancelInfiniteVibration = false;
+                            vibrator.vibrate(8000);
+                            scheduledExecutorService.schedule(new InfiniteVibrationRunnable(), 8000, TimeUnit.MILLISECONDS);
+
                             Log.d(TAG, "Now vibrating!");
                         }
                     } else if (request == COM_STOP_VIBRATION) {
                         forceVibration = false;
+                        cancelInfiniteVibration = true;
                         vibrator.cancel();
                         Log.d(TAG, "Vibrating cancelled");
                     }
                 }
             } catch (final IOException e) {
                 e.printStackTrace();
+            }
+        }
+    }
+
+    private final class InfiniteVibrationRunnable implements Runnable {
+        @Override
+        public void run() {
+            if (!cancelInfiniteVibration) {
+                vibrator.vibrate(8000);
+                scheduledExecutorService.schedule(new InfiniteVibrationRunnable(), 8000, TimeUnit.MILLISECONDS);
             }
         }
     }
