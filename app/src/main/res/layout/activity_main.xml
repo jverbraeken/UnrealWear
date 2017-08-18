@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<android.support.wearable.view.BoxInsetLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<android.support.wearable.view.BoxInsetLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:id="@+id/container"
-    tools:context="com.epicgames.ue4.MainActivity"
-    tools:deviceIds="wear">
-
+    android:layout_height="match_parent">
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -17,10 +10,9 @@
 
         <ImageView
             android:id="@+id/imageView"
-            android:src="@drawable/unreal_logo"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:contentDescription="@string/unreal_wear" />
-
+            android:contentDescription="@string/app_name"
+            android:src="@drawable/unreal_logo" />
     </FrameLayout>
 </android.support.wearable.view.BoxInsetLayout>

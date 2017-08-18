@@ -68,6 +68,24 @@ public final class ReceiveDataRunnable implements Runnable {
                         MainActivity.setDoVibrateWhileShaking(false);
                         Log.d(TAG, "Do NOT vibrate while shaking");
                         break;
+                    case COMTW_REQUEST_SHAKING_SENSIVITY:
+                        final byte sensivity = dataInputStream.readByte();
+                        Log.d(TAG, "Sensivity received! -> " + sensivity);
+                        switch (sensivity) {
+                            case COMTW_SHAKING_SENSIVITY_LOW:
+                                MainActivity.setShakingSensivity(MainActivity.LOW_SHAKING_SENSIVITY);
+                                break;
+                            case COMTW_SHAKING_SENSIVITY_MEDIUM:
+                                MainActivity.setShakingSensivity(MainActivity.MEDIUM_SHAKING_SENSIVITY);
+                                break;
+                            case COMTW_SHAKING_SENSIVITY_HIGH:
+                                MainActivity.setShakingSensivity(MainActivity.HIGH_SHAKING_SENSIVITY);
+                                break;
+                            default:
+                                Log.e(TAG, "Unknown sensivity");
+                                break;
+                        }
+                        break;
                     default:
                         Log.d(TAG, "Unknown command received: " + request);
                 }

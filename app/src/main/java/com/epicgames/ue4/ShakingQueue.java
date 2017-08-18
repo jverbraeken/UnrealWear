@@ -2,7 +2,7 @@ package com.epicgames.ue4;
 
 import android.support.annotation.Nullable;
 
-class SampleQueue {
+class ShakingQueue {
     private static final long MAX_WINDOW_SIZE = 500000000;
     private static final long MIN_WINDOW_SIZE = MAX_WINDOW_SIZE >> 1;
     private static final int MIN_QUEUE_SIZE = 4;
@@ -68,6 +68,7 @@ class SampleQueue {
                 && newest.timestamp - oldest.timestamp >= MIN_WINDOW_SIZE
                 && acceleratingCount >= (sampleCount >> 1) + (sampleCount >> 2);
     }
+
     private static class Sample {
         long timestamp;
         boolean accelerating;

@@ -67,6 +67,7 @@ public final class SendSensorDataRunnable implements Runnable {
 
     private static void sendDataOverChannel(final DataOutputStream outputStream, final Rotation rotation, final Acceleration acceleration, final Touch touch) {
         try {
+            outputStream.writeByte(MainActivity.COMTP_SENSOR_DATA);
             outputStream.writeFloat(rotation.x);
             outputStream.writeFloat(rotation.y);
             outputStream.writeFloat(rotation.z);

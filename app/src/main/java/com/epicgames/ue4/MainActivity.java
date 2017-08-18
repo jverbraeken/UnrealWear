@@ -19,6 +19,8 @@ import android.widget.ImageView;
 import com.epicgames.ue4.runnables.ChannelCreateRunnable;
 import com.epicgames.ue4.runnables.ReceiveDataRunnable;
 import com.epicgames.ue4.runnables.SendSensorDataRunnable;
+import com.epicgames.ue4.runnables.SendShakingStartedRunnable;
+import com.epicgames.ue4.runnables.SendShakingStoppedRunnable;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
@@ -27,10 +29,6 @@ import com.google.android.gms.wearable.NodeApi;
 import com.google.android.gms.wearable.Wearable;
 
 import java.io.DataOutputStream;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -44,80 +42,51 @@ import java.util.concurrent.locks.ReentrantLock;
 @SuppressWarnings({"InstanceVariableOfConcreteClass", "ClassWithoutLogger", "PublicConstructor", "ClassWithTooManyFields", "StaticVariableOfConcreteClass", "PublicMethodWithoutLogging"})
 public final class MainActivity extends WearableActivity implements SensorEventListener, GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
     public static final String TAG = "Foo";
-    public static final int MINIMUM_SHAKING_SENSIVITY = 11;
     public static final int MAX_VIBRATION_TIME = 99999;
     public static final int VIBRATION_DELAY = 650;
     public static final Lock sendChannelLock = new ReentrantLock();
     public static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
-    private static final String IP_ADDRESS = "192.168.178.29";
-    private static final int PORT = 55056;
+
+    public static final byte COMTP_SENSOR_DATA = 1;
+    public static final byte COMTP_SHAKING_STARTED = 2;
+    public static final byte COMTP_SHAKING_STOPPED = 3;
+
     private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
-    private static final InetAddress INET_ADDRESS;
     private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
+    public static final int LOW_SHAKING_SENSIVITY = 11;
+    public static final int MEDIUM_SHAKING_SENSIVITY = 15;
+    public static final int HIGH_SHAKING_SENSIVITY = 19;
+    private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
+    private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
+    private static final Acceleration acceleration = new Acceleration(0, 0, 0);
     private static WifiManager.WifiLock wifiLock;
     private static volatile boolean cancelInfiniteVibration;
     private static boolean newTouchThisSample;
     private static Touch touch = NO_TOUCH;
     private static boolean doVibrateWhileShaking = true;
-    private static boolean forceVibration;
+    private static volatile boolean forceVibration;
     private static volatile DataOutputStream channelOutputStream;
-
-    static {
-        InetAddress tmp = null;
-        try {
-            tmp = InetAddress.getByName(IP_ADDRESS);
-        } catch (final UnknownHostException e) {
-            e.printStackTrace();
-        }
-        INET_ADDRESS = tmp;
-    }
-
-    private final SampleQueue queue = new SampleQueue();
-    private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
-    private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
-    private static final Acceleration acceleration = new Acceleration(0, 0, 0);
+    private final ShakingQueue queue = new ShakingQueue();
     private GoogleApiClient googleApiClient;
-    private Node node;
     private SensorManager sensorManager;
     private Sensor gyroscope;
     private Sensor accelerometer;
     private Vibrator vibrator;
     private Timer vibrationTimer = new Timer("vibration timer");
-    private DatagramSocket datagramSocket;
-    private long vibrationStartTime;
-
-    public static void keepWiFiOn(final Context context, final boolean on) {
-        if (wifiLock == null) {
-            final WifiManager wm = (WifiManager) context.getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-            if (wm != null) {
-                wm.setWifiEnabled(true);
-                Log.d(TAG, "Wifi should now be enabled...");
-                wifiLock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL, TAG);
-                wifiLock.setReferenceCounted(true);
-            }
-        }
-        if (wifiLock != null) {
-            if (on) {
-                wifiLock.acquire();
-                Log.d(TAG, "Acquired WiFi lock");
-            } else if (wifiLock.isHeld()) {
-                wifiLock.release();
-                Log.d(TAG, "Released WiFi lock");
-            }
-        }
-    }
+    private long shakeVibrationStartTime;
+    private static int shakingSensivity = LOW_SHAKING_SENSIVITY;
 
     /**
      * Returns true if the device is currently accelerating.
      */
-    private static boolean isAccelerating(final SensorEvent event) {
-        final float ax = event.values[0];
-        final float ay = event.values[1];
-        final float az = event.values[2];
+    private static boolean isAccelerating(final float[] values) {
+        final float ax = values[0];
+        final float ay = values[1];
+        final float az = values[2];
 
         final double magnitudeSquared = ax * ax + ay * ay + az * az;
-        return magnitudeSquared > MINIMUM_SHAKING_SENSIVITY * MINIMUM_SHAKING_SENSIVITY;
+        return magnitudeSquared > shakingSensivity * shakingSensivity;
     }
 
     public static boolean isDoVibrateWhileShaking() {
@@ -156,6 +125,31 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         return newTouchThisSample;
     }
 
+    private static void updateAcceleration(final float[] values) {
+        accelerationWithGravity.x = LOW_PASS_FILTER * accelerationWithGravity.x + (1 - LOW_PASS_FILTER) * values[0];
+        accelerationWithGravity.y = LOW_PASS_FILTER * accelerationWithGravity.y + (1 - LOW_PASS_FILTER) * values[1];
+        accelerationWithGravity.z = LOW_PASS_FILTER * accelerationWithGravity.z + (1 - LOW_PASS_FILTER) * values[2];
+        acceleration.x = values[0] - accelerationWithGravity.x;
+        acceleration.y = values[1] - accelerationWithGravity.y;
+        acceleration.z = values[2] - accelerationWithGravity.z;
+    }
+
+    public static List<Rotation> getRotations() {
+        return new ArrayList<>(rotations);
+    }
+
+    public static Acceleration getAcceleration() {
+        return acceleration;
+    }
+
+    public static Touch getTouch() {
+        return touch;
+    }
+
+    public static void setShakingSensivity(int shakingSensivity) {
+        MainActivity.shakingSensivity = shakingSensivity;
+    }
+
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -166,7 +160,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-        keepWiFiOn(this, true);
 
         final ImageView imageView = (ImageView) findViewById(R.id.imageView);
         imageView.setOnTouchListener(new View.OnTouchListener() {
@@ -174,7 +167,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             public boolean onTouch(final View view, final MotionEvent motionEvent) {
                 if (isNewTouchThisSample() && motionEvent.getAction() == MotionEvent.ACTION_UP) {
                     touch = NO_TOUCH;
-                    Log.d(TAG, "Touch not getting through: " + isNewTouchThisSample() + ", " + motionEvent.getAction());
                     newTouchThisSample = false;
                     return true;
                 } else if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
@@ -195,13 +187,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 .addOnConnectionFailedListener(this)
                 .build();
 
-        try {
-            datagramSocket = new DatagramSocket(PORT);
-            datagramSocket.setBroadcast(true);
-        } catch (final SocketException e) {
-            e.printStackTrace();
-        }
-
         ThreadManager.scheduleAtFixedRate(new SendSensorDataRunnable(), SEND_TIME_THRESHOLD, TimeUnit.MILLISECONDS);
     }
 
@@ -218,7 +203,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                     @Override
                     public void onResult(@NonNull final NodeApi.GetConnectedNodesResult r) {
                         for (final Node node : r.getNodes()) {
-                            MainActivity.this.node = node;
                             try {
                                 final ChannelCreateRunnable.ChannelCreateRunnableResult result = (ChannelCreateRunnable.ChannelCreateRunnableResult) ThreadManager.submit(new ChannelCreateRunnable(googleApiClient, node)).get();
                                 ThreadManager.execute(new ReceiveDataRunnable(vibrator, result.channelInputStream));
@@ -244,38 +228,66 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public void onSensorChanged(final SensorEvent sensorEvent) {
         final int sensorType = sensorEvent.sensor.getType();
         if (sensorType == Sensor.TYPE_ROTATION_VECTOR) {
-            final float[] rotation = new float[3];
-            System.arraycopy(sensorEvent.values, 0, rotation, 0, 3);
-            storeRotation(rotation);
+            onGyroscopeChanged(sensorEvent.values);
         } else if (sensorType == Sensor.TYPE_ACCELEROMETER) {
-            accelerationWithGravity.x = LOW_PASS_FILTER * accelerationWithGravity.x + (1 - LOW_PASS_FILTER) * sensorEvent.values[0];
-            accelerationWithGravity.y = LOW_PASS_FILTER * accelerationWithGravity.y + (1 - LOW_PASS_FILTER) * sensorEvent.values[1];
-            accelerationWithGravity.z = LOW_PASS_FILTER * accelerationWithGravity.z + (1 - LOW_PASS_FILTER) * sensorEvent.values[2];
-            getAcceleration().x = sensorEvent.values[0] - accelerationWithGravity.x;
-            getAcceleration().y = sensorEvent.values[1] - accelerationWithGravity.y;
-            getAcceleration().z = sensorEvent.values[2] - accelerationWithGravity.z;
-            final boolean accelerating = isAccelerating(sensorEvent);
-            final long timestamp = sensorEvent.timestamp;
-            queue.add(timestamp, accelerating);
-            if (queue.isShaking()) {
-                queue.clear();
-                Log.d(TAG, "Shaked!!!");
-                if (!forceVibration && isDoVibrateWhileShaking()) {
-                    if (System.currentTimeMillis() > vibrationStartTime + MAX_VIBRATION_TIME) {
-                        vibrator.vibrate(MAX_VIBRATION_TIME);
-                        vibrationStartTime = System.currentTimeMillis();
-                    }
-                    vibrationTimer.cancel();
-                    vibrationTimer = new Timer("vibration timer");
-                    vibrationTimer.schedule(new TimerTask() {
-                        @Override
-                        public void run() {
-                            Log.d(TAG, "Cancelling");
-                            vibrator.cancel();
-                            vibrationStartTime = 0L;
-                        }
-                    }, VIBRATION_DELAY);
+            onAccelerometerChanged(sensorEvent.values, sensorEvent.timestamp);
+        }
+    }
+
+    private void onGyroscopeChanged(final float[] values) {
+        final float[] rotation = new float[3];
+        System.arraycopy(values, 0, rotation, 0, 3);
+        storeRotation(rotation);
+    }
+
+    private void onAccelerometerChanged(final float[] values, final long timestamp) {
+        updateAcceleration(values);
+        checkForShaking(values, timestamp);
+    }
+
+    private void checkForShaking(final float[] values, final long timestamp) {
+        final boolean accelerating = isAccelerating(values);
+        queue.add(timestamp, accelerating);
+
+        if (queue.isShaking()) {
+            queue.clear();
+            Log.d(TAG, "Shaked!!!");
+
+            communicateShakingStarted();
+
+            setShakeVibrationTimer();
+
+            executeVibrationByShaking();
+        }
+    }
+
+    private void communicateShakingStarted() {
+        if (shakeVibrationStartTime == 0L) {
+            ThreadManager.execute(new SendShakingStartedRunnable());
+        }
+    }
+
+    private void setShakeVibrationTimer() {
+        vibrationTimer.cancel();
+        vibrationTimer = new Timer("Terminates vibration by shaking");
+        vibrationTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                Log.d(TAG, "Cancelling shaking");
+                if (!forceVibration) {
+                    vibrator.cancel();
                 }
+                shakeVibrationStartTime = 0L;
+                ThreadManager.execute(new SendShakingStoppedRunnable());
+            }
+        }, VIBRATION_DELAY);
+    }
+
+    private void executeVibrationByShaking() {
+        if (!forceVibration && isDoVibrateWhileShaking()) {
+            if (System.currentTimeMillis() > shakeVibrationStartTime + MAX_VIBRATION_TIME) {
+                vibrator.vibrate(MAX_VIBRATION_TIME);
+                shakeVibrationStartTime = System.currentTimeMillis();
             }
         }
     }
@@ -314,17 +326,5 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         rotation[1] = orientation[1] * FROM_RADIANS_TO_DEGREES; //Pitch
         rotation[2] = orientation[2] * FROM_RADIANS_TO_DEGREES; //Roll
         rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
-    }
-
-    public static List<Rotation> getRotations() {
-        return new ArrayList<>(rotations);
-    }
-
-    public static Acceleration getAcceleration() {
-        return acceleration;
-    }
-
-    public static Touch getTouch() {
-        return touch;
     }
 }
