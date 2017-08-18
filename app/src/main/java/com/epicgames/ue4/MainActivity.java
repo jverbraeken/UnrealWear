@@ -258,6 +258,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             setShakeVibrationTimer();
 
             executeVibrationByShaking();
+            shakeVibrationStartTime = System.currentTimeMillis();
         }
     }
 
@@ -287,7 +288,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         if (!forceVibration && isDoVibrateWhileShaking()) {
             if (System.currentTimeMillis() > shakeVibrationStartTime + MAX_VIBRATION_TIME) {
                 vibrator.vibrate(MAX_VIBRATION_TIME);
-                shakeVibrationStartTime = System.currentTimeMillis();
             }
         }
     }
