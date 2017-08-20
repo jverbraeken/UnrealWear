@@ -26,10 +26,10 @@ public final class SendSensorDataRunnable implements Runnable {
             final boolean newTouchThisSample = MainActivity.isNewTouchThisSample();
 
             if (!rotations.isEmpty()) {
-                final Rotation avgRotation = avgAndResetRotation(rotations);
+                final Rotation avgRotation = avgAndResetRotations();
 
                 if (BuildConfig.DEBUG) {
-                    Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z, avgRotation.timestamp));
+                    //Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z, avgRotation.timestamp));
                 }
 
                 MainActivity.sendChannelLock.lock();
@@ -46,23 +46,24 @@ public final class SendSensorDataRunnable implements Runnable {
         }
     }
 
-    private Rotation avgAndResetRotation(final List<Rotation> rotations) {
-        synchronized (rotations) {
-            float x = 0;
-            float y = 0;
-            float z = 0;
-            for (final Rotation rotation : rotations) {
-                x += rotation.x;
-                y += rotation.y;
-                z += rotation.z;
-            }
-            x /= rotations.size();
-            y /= rotations.size();
-            z /= rotations.size();
-            final Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size() - 1).timestamp);
-            rotations.clear();
-            return rotation;
+    private Rotation avgAndResetRotations() {
+        MainActivity.rotationsLock.lock();
+        final List<Rotation> rotations = MainActivity.getRotations();
+        float x = 0;
+        float y = 0;
+        float z = 0;
+        for (final Rotation rotation : rotations) {
+            x += rotation.x;
+            y += rotation.y;
+            z += rotation.z;
         }
+        x /= rotations.size();
+        y /= rotations.size();
+        z /= rotations.size();
+        final Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size() - 1).timestamp);
+        MainActivity.resetRotations();
+        MainActivity.rotationsLock.unlock();
+        return rotation;
     }
 
     private static void sendDataOverChannel(final DataOutputStream outputStream, final Rotation rotation, final Acceleration acceleration, final Touch touch) {

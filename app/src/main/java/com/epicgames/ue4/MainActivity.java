@@ -45,18 +45,18 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public static final int MAX_VIBRATION_TIME = 99999;
     public static final int VIBRATION_DELAY = 650;
     public static final Lock sendChannelLock = new ReentrantLock();
+    public static final Lock rotationsLock = new ReentrantLock();
     public static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
 
     public static final byte COMTP_SENSOR_DATA = 1;
     public static final byte COMTP_SHAKING_STARTED = 2;
     public static final byte COMTP_SHAKING_STOPPED = 3;
-
-    private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
-    private static final float LOW_PASS_FILTER = 0.8f;
-    private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
     public static final int LOW_SHAKING_SENSIVITY = 11;
     public static final int MEDIUM_SHAKING_SENSIVITY = 15;
     public static final int HIGH_SHAKING_SENSIVITY = 19;
+    private static final long SEND_TIME_THRESHOLD = 1000 / 10; // 20 times per 1000 millisecond (= 20 times per second)
+    private static final float LOW_PASS_FILTER = 0.8f;
+    private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
     private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
     private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
     private static final Acceleration acceleration = new Acceleration(0, 0, 0);
@@ -67,6 +67,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static boolean doVibrateWhileShaking = true;
     private static volatile boolean forceVibration;
     private static volatile DataOutputStream channelOutputStream;
+    private static int shakingSensivity = HIGH_SHAKING_SENSIVITY;
     private final ShakingQueue queue = new ShakingQueue();
     private GoogleApiClient googleApiClient;
     private SensorManager sensorManager;
@@ -75,7 +76,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private Vibrator vibrator;
     private Timer vibrationTimer = new Timer("vibration timer");
     private long shakeVibrationStartTime;
-    private static int shakingSensivity = LOW_SHAKING_SENSIVITY;
 
     /**
      * Returns true if the device is currently accelerating.
@@ -325,6 +325,13 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         rotation[0] = orientation[0] * FROM_RADIANS_TO_DEGREES; //Yaw
         rotation[1] = orientation[1] * FROM_RADIANS_TO_DEGREES; //Pitch
         rotation[2] = orientation[2] * FROM_RADIANS_TO_DEGREES; //Roll
+        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f", rotation[0], rotation[1], rotation[2]));
+        rotationsLock.lock();
         rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
+        rotationsLock.unlock();
+    }
+
+    public static void resetRotations() {
+        rotations.clear();
     }
 }
