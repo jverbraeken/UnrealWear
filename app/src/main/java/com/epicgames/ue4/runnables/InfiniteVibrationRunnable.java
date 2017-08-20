@@ -1,7 +1,6 @@
 package com.epicgames.ue4.runnables;
 
 import android.os.Vibrator;
-import android.support.annotation.NonNull;
 
 import com.epicgames.ue4.MainActivity;
 import com.epicgames.ue4.ThreadManager;
@@ -11,7 +10,7 @@ import java.util.concurrent.TimeUnit;
 public final class InfiniteVibrationRunnable implements Runnable {
     final Vibrator vibrator;
 
-    public InfiniteVibrationRunnable(@NonNull final Vibrator vibrator) {
+    public InfiniteVibrationRunnable(final Vibrator vibrator) {
         this.vibrator = vibrator;
     }
 

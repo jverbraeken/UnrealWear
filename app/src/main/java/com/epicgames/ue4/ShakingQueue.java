@@ -1,6 +1,5 @@
 package com.epicgames.ue4;
 
-import android.support.annotation.Nullable;
 
 class ShakingQueue {
     private static final long MAX_WINDOW_SIZE = 500000000;
@@ -8,7 +7,6 @@ class ShakingQueue {
     private static final int MIN_QUEUE_SIZE = 4;
     private final SamplePool pool = new SamplePool();
     private Sample oldest;
-    @Nullable
     private Sample newest;
     private int sampleCount;
     private int acceleratingCount;
@@ -72,7 +70,6 @@ class ShakingQueue {
     private static class Sample {
         long timestamp;
         boolean accelerating;
-        @Nullable
         Sample next;
     }
 
