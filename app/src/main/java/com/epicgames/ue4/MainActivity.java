@@ -48,7 +48,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
     public static final int HIGH_SHAKING_SENSIVITY = 19;
     public static final InetAddress INET_ADDRESS;
     public static final int PORT = 55056;
-    private static final long SEND_TIME_THRESHOLD = 1000 / 10; // 20 times per 1000 millisecond (= 20 times per second)
+    private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 25 times per 1000 millisecond (= 25 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
     private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
     private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
@@ -129,9 +129,10 @@ public final class MainActivity extends Activity implements SensorEventListener 
         accelerationWithGravity.x = LOW_PASS_FILTER * accelerationWithGravity.x + (1 - LOW_PASS_FILTER) * values[0];
         accelerationWithGravity.y = LOW_PASS_FILTER * accelerationWithGravity.y + (1 - LOW_PASS_FILTER) * values[1];
         accelerationWithGravity.z = LOW_PASS_FILTER * accelerationWithGravity.z + (1 - LOW_PASS_FILTER) * values[2];
-        acceleration.x = values[0] - accelerationWithGravity.x;
-        acceleration.y = values[1] - accelerationWithGravity.y;
-        acceleration.z = values[2] - accelerationWithGravity.z;
+
+        acceleration.x = LOW_PASS_FILTER * acceleration.x + (1 - LOW_PASS_FILTER) * (values[0] - accelerationWithGravity.x);
+        acceleration.y = LOW_PASS_FILTER * acceleration.y + (1 - LOW_PASS_FILTER) * (values[1] - accelerationWithGravity.y);
+        acceleration.z = LOW_PASS_FILTER * acceleration.z + (1 - LOW_PASS_FILTER) * (values[2] - accelerationWithGravity.z);
     }
 
     public static List<Rotation> getRotations() {
@@ -298,7 +299,6 @@ public final class MainActivity extends Activity implements SensorEventListener 
         rotation[0] = orientation[0] * FROM_RADIANS_TO_DEGREES; //Yaw
         rotation[1] = orientation[1] * FROM_RADIANS_TO_DEGREES; //Pitch
         rotation[2] = orientation[2] * FROM_RADIANS_TO_DEGREES; //Roll
-        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f", rotation[0], rotation[1], rotation[2]));
         rotationsLock.lock();
         rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
         rotationsLock.unlock();

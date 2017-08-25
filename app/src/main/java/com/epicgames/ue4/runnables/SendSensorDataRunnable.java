@@ -70,7 +70,7 @@ public final class SendSensorDataRunnable implements Runnable {
             final Rotation avgRotation = avgAndResetRotations();
 
             if (BuildConfig.DEBUG) {
-                Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f - Acceleration: %.2f, %.2f, %.2f - Timestamp: %d", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z, avgRotation.timestamp));
+                Log.d(TAG, String.format("Rotation: %.0f, %.0f, %.0f - Acceleration: %.1f, %.1f, %.1f", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z));
             }
 
             MainActivity.sendData.lock();
@@ -92,14 +92,35 @@ public final class SendSensorDataRunnable implements Runnable {
         float x = 0;
         float y = 0;
         float z = 0;
-        for (final Rotation rotation : rotations) {
-            x += rotation.x;
-            y += rotation.y;
-            z += rotation.z;
+        float lastX = rotations.get(0).x;
+        float lastY = rotations.get(0).y;
+        float lastZ = rotations.get(0).z;
+        int xNum = rotations.size();
+        int yNum = rotations.size();
+        int zNum = rotations.size();
+        for (int i = 0; i < rotations.size(); i++) {
+            if (Math.abs(lastX - rotations.get(i).x) > 180) {
+                x = rotations.get(i).x;
+                xNum = rotations.size() - i;
+            } else {
+                x += rotations.get(i).x;
+            }
+            if (Math.abs(lastY - rotations.get(i).y) > 180) {
+                y = rotations.get(i).y;
+                yNum = rotations.size() - i;
+            } else {
+                y += rotations.get(i).y;
+            }
+            if (Math.abs(lastZ - rotations.get(i).z) > 180) {
+                z = rotations.get(i).z;
+                zNum = rotations.size() - i;
+            } else {
+                z += rotations.get(i).z;
+            }
         }
-        x /= rotations.size();
-        y /= rotations.size();
-        z /= rotations.size();
+        x /= xNum;
+        y /= yNum;
+        z /= zNum;
         final Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size() - 1).timestamp);
         MainActivity.resetRotations();
         MainActivity.rotationsLock.unlock();
