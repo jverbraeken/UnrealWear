@@ -150,6 +150,10 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         MainActivity.shakingSensivity = shakingSensivity;
     }
 
+    public static void resetRotations() {
+        rotations.clear();
+    }
+
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -315,23 +319,39 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         super.onPause();
     }
 
+    private float[] quaternion_mult(final float[] q, final float[] r) {
+        return new float[]{
+                r[0] * q[0] - r[1] * q[1] - r[2] * q[2] - r[3] * q[3],
+                r[0] * q[1] + r[1] * q[0] - r[2] * q[3] + r[3] * q[2],
+                r[0] * q[2] + r[1] * q[3] + r[2] * q[0] - r[3] * q[1],
+                r[0] * q[3] - r[1] * q[2] + r[2] * q[1] + r[3] * q[0]};
+    }
+
     @SuppressWarnings("NumericCastThatLosesPrecision")
     private void storeRotation(final float[] values) {
         final float[] rotMat = new float[9];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
+        final float[] q = new float[4];
+        SensorManager.getQuaternionFromVector(q, values);
         final float[] orientation = new float[3];
         SensorManager.getOrientation(rotMat, orientation);
-        final float[] rotation = new float[3];
-        rotation[0] = orientation[0] * FROM_RADIANS_TO_DEGREES; //Yaw
-        rotation[1] = orientation[1] * FROM_RADIANS_TO_DEGREES; //Pitch
-        rotation[2] = orientation[2] * FROM_RADIANS_TO_DEGREES; //Roll
-        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f", rotation[0], rotation[1], rotation[2]));
-        rotationsLock.lock();
-        rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
-        rotationsLock.unlock();
-    }
 
-    public static void resetRotations() {
-        rotations.clear();
+
+        final float[] groundVector = {0.0f, 0.0f, 0.0f, 1.0f};
+        final float[] qConjunct = {q[0], -q[1], -q[2], -q[3]};
+        final float[] rotationConjToZ = quaternion_mult(quaternion_mult(q, groundVector), qConjunct);
+
+        final float[] rotation = new float[3];
+        rotation[0] = rotationConjToZ[1] * 90;
+        rotation[1] = rotationConjToZ[3] >= 0 ? rotationConjToZ[2] * 90 : 180 -rotationConjToZ[2] * 90;
+        rotation[2] = orientation[0] * FROM_RADIANS_TO_DEGREES;
+
+        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ[1], rotationConjToZ[2], rotationConjToZ[3], rotation[0], rotation[1], rotation[2]));
+        rotationsLock.lock();
+        try {
+            rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
+        } finally {
+            rotationsLock.unlock();
+        }
     }
 }
