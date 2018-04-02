@@ -70,7 +70,7 @@ public final class SendSensorDataRunnable implements Runnable {
             final Rotation avgRotation = avgAndResetRotations();
 
             if (BuildConfig.DEBUG) {
-                Log.d(TAG, String.format("Rotation: %.0f, %.0f, %.0f - Acceleration: %.1f, %.1f, %.1f", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z));
+                //Log.d(TAG, String.format("Rotation: %.0f, %.0f, %.0f - Acceleration: %.1f, %.1f, %.1f", avgRotation.x, avgRotation.y, avgRotation.z, acceleration.x, acceleration.y, acceleration.z));
             }
 
             MainActivity.sendData.lock();
