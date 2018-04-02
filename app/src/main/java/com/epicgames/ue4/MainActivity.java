@@ -12,6 +12,7 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
+import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ImageView;
@@ -46,7 +47,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public static final int VIBRATION_DELAY = 650;
     public static final Lock sendChannelLock = new ReentrantLock();
     public static final Lock rotationsLock = new ReentrantLock();
-    public static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
+    public static final Touch NO_TOUCH = new Touch(-1, -1, Touch.STATE.DOWN);
 
     public static final byte COMTP_SENSOR_DATA = 1;
     public static final byte COMTP_SHAKING_STARTED = 2;
@@ -62,8 +63,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final Acceleration acceleration = new Acceleration(0, 0, 0);
     private static WifiManager.WifiLock wifiLock;
     private static volatile boolean cancelInfiniteVibration;
-    private static boolean newTouchThisSample;
-    private static Touch touch = NO_TOUCH;
+    private static volatile Touch touch = NO_TOUCH;
     private static boolean doVibrateWhileShaking = true;
     private static volatile boolean forceVibration;
     private static volatile DataOutputStream channelOutputStream;
@@ -113,16 +113,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         touch = NO_TOUCH;
     }
 
-    public static void resetNewTouchThisSample() {
-        newTouchThisSample = false;
-    }
-
     public static DataOutputStream getChannelOutputStream() {
         return channelOutputStream;
-    }
-
-    public static boolean isNewTouchThisSample() {
-        return newTouchThisSample;
     }
 
     private static void updateAcceleration(final float[] values) {
@@ -166,24 +158,10 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
         final ImageView imageView = (ImageView) findViewById(R.id.imageView);
-        imageView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(final View view, final MotionEvent motionEvent) {
-                if (isNewTouchThisSample() && motionEvent.getAction() == MotionEvent.ACTION_UP) {
-                    touch = NO_TOUCH;
-                    newTouchThisSample = false;
-                    return true;
-                } else if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
-                    // Do nothing
-                    return true;
-                } else {
-                    touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), (byte) (motionEvent.getAction() == MotionEvent.ACTION_UP ? 1 : 0));
-                    Log.d(TAG, "Touch registered");
-                    newTouchThisSample = true;
-                    return true;
-                }
-            }
-        });
+
+        final GestureDetector gestureDetector;
+
+        imageView.setOnTouchListener(new TouchListener(this));
 
         googleApiClient = new GoogleApiClient.Builder(this)
                 .addApi(Wearable.API)
@@ -295,6 +273,12 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             }
         }
     }
+
+    public static void setTouch(final Touch touch) {
+        MainActivity.touch = touch;
+    }
+
+
 
     @Override
     public void onAccuracyChanged(final Sensor sensor, final int i) {

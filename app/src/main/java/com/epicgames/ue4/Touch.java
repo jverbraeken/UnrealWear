@@ -1,5 +1,7 @@
 package com.epicgames.ue4;
 
+import android.support.annotation.NonNull;
+
 public final class Touch {
     public final float x;
     public final float y;
@@ -8,21 +10,34 @@ public final class Touch {
      * 1 = hold
      * 2 = released
      */
-    public final byte state;
+    public final Touch.STATE state;
     public final long timestamp;
 
-    Touch(final float x, final float y, final byte state) {
+    public enum STATE {
+        DOWN((byte) 1),
+        HOLD((byte) 2),
+        UP((byte) 3),
+        SWIPE_LEFT((byte) 4),
+        SWIPE_UP((byte) 5),
+        SWIPE_RIGHT((byte) 6),
+        SWIPE_DOWN((byte) 7);
+
+        final byte code;
+
+        STATE(final byte code) {
+            this.code = code;
+        }
+
+        public byte getCode() {
+            return code;
+        }
+    }
+
+    Touch(final float x, final float y, @NonNull final Touch.STATE state) {
         this.x = x;
         this.y = y;
         this.state = state;
         this.timestamp = System.currentTimeMillis();
-    }
-
-    Touch(final float x, final float y, final byte state, final long timestamp) {
-        this.x = x;
-        this.y = y;
-        this.state = state;
-        this.timestamp = timestamp;
     }
 
     @Override
@@ -50,7 +65,7 @@ public final class Touch {
     public int hashCode() {
         int result = this.x == +0.0f ? 0 : Float.floatToIntBits(this.x);
         result = 31 * result + (this.y == +0.0f ? 0 : Float.floatToIntBits(this.y));
-        result = 31 * result + this.state;
+        result = 31 * result + this.state.hashCode();
         return result;
     }
 }

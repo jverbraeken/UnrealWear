@@ -17,7 +17,8 @@
             android:name="com.google.android.wearable"
             android:required="true" />
 
-        <activity android:name=".MainActivity">
+        <activity android:name=".MainActivity"
+            android:theme="@style/AppTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT\" />

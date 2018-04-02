@@ -11,6 +11,7 @@ import com.epicgames.ue4.Touch;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 
 import static com.epicgames.ue4.MainActivity.NO_TOUCH;
 import static com.epicgames.ue4.MainActivity.TAG;
@@ -23,7 +24,6 @@ public final class SendSensorDataRunnable implements Runnable {
             final List<Rotation> rotations = MainActivity.getRotations();
             final Acceleration acceleration = MainActivity.getAcceleration();
             final Touch touch = MainActivity.getTouch();
-            final boolean newTouchThisSample = MainActivity.isNewTouchThisSample();
 
             if (!rotations.isEmpty()) {
                 final Rotation avgRotation = avgAndResetRotations();
@@ -34,9 +34,6 @@ public final class SendSensorDataRunnable implements Runnable {
 
                 MainActivity.sendChannelLock.lock();
                 try {
-                    if (newTouchThisSample) {
-                        MainActivity.resetNewTouchThisSample();
-                    }
                     sendDataOverChannel(dataOutputStream, avgRotation, acceleration, touch);
                     MainActivity.resetTouch();
                 } finally {
@@ -77,14 +74,15 @@ public final class SendSensorDataRunnable implements Runnable {
             outputStream.writeFloat(acceleration.y);
             outputStream.writeFloat(acceleration.z);
             outputStream.writeLong(acceleration.timestamp);
-            if (touch.equals(NO_TOUCH)) {
+            if (Objects.equals(touch, NO_TOUCH)) {
                 outputStream.writeFloat(-1);
                 outputStream.writeFloat(-1);
                 outputStream.writeByte(2);
             } else {
                 outputStream.writeFloat(touch.x);
                 outputStream.writeFloat(touch.y);
-                outputStream.writeByte(touch.state);
+                outputStream.writeByte(touch.state.getCode());
+                Log.d("Touch!", "state: " + Integer.toString(touch.state.getCode()));
             }
             outputStream.writeLong(touch.timestamp);
             outputStream.flush();
