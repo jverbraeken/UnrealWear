@@ -1,7 +1,5 @@
 package com.epicgames.ue4.runnables;
 
-import android.util.Log;
-
 import com.epicgames.ue4.Acceleration;
 import com.epicgames.ue4.BuildConfig;
 import com.epicgames.ue4.MainActivity;
@@ -11,12 +9,36 @@ import com.epicgames.ue4.Touch;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.List;
-import java.util.Objects;
-
-import static com.epicgames.ue4.MainActivity.NO_TOUCH;
-import static com.epicgames.ue4.MainActivity.TAG;
 
 public final class SendSensorDataRunnable implements Runnable {
+    private static void sendDataOverChannel(final DataOutputStream outputStream, final Rotation rotation, final Acceleration acceleration, final Touch touch) {
+        try {
+            outputStream.writeByte(MainActivity.COMTP_SENSOR_DATA);
+            outputStream.writeFloat(rotation.x);
+            outputStream.writeFloat(rotation.y);
+            outputStream.writeFloat(rotation.z);
+            outputStream.writeLong(rotation.timestamp);
+            outputStream.writeFloat(acceleration.x);
+            outputStream.writeFloat(acceleration.y);
+            outputStream.writeFloat(acceleration.z);
+            outputStream.writeLong(acceleration.timestamp);
+            if (touch == null) {
+                outputStream.writeFloat(-1);
+                outputStream.writeFloat(-1);
+                outputStream.writeByte(2);
+                outputStream.writeLong(System.currentTimeMillis());
+            } else {
+                outputStream.writeFloat(touch.x);
+                outputStream.writeFloat(touch.y);
+                outputStream.writeByte(touch.state.getCode());
+                outputStream.writeLong(touch.timestamp);
+            }
+            outputStream.flush();
+        } catch (final IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     @Override
     public void run() {
         final DataOutputStream dataOutputStream = MainActivity.getChannelOutputStream();
@@ -35,7 +57,7 @@ public final class SendSensorDataRunnable implements Runnable {
                 MainActivity.sendChannelLock.lock();
                 try {
                     sendDataOverChannel(dataOutputStream, avgRotation, acceleration, touch);
-                    MainActivity.resetTouch();
+                    MainActivity.nextTouch();
                 } finally {
                     MainActivity.sendChannelLock.unlock();
                 }
@@ -61,33 +83,5 @@ public final class SendSensorDataRunnable implements Runnable {
         MainActivity.resetRotations();
         MainActivity.rotationsLock.unlock();
         return rotation;
-    }
-
-    private static void sendDataOverChannel(final DataOutputStream outputStream, final Rotation rotation, final Acceleration acceleration, final Touch touch) {
-        try {
-            outputStream.writeByte(MainActivity.COMTP_SENSOR_DATA);
-            outputStream.writeFloat(rotation.x);
-            outputStream.writeFloat(rotation.y);
-            outputStream.writeFloat(rotation.z);
-            outputStream.writeLong(rotation.timestamp);
-            outputStream.writeFloat(acceleration.x);
-            outputStream.writeFloat(acceleration.y);
-            outputStream.writeFloat(acceleration.z);
-            outputStream.writeLong(acceleration.timestamp);
-            if (Objects.equals(touch, NO_TOUCH)) {
-                outputStream.writeFloat(-1);
-                outputStream.writeFloat(-1);
-                outputStream.writeByte(2);
-            } else {
-                outputStream.writeFloat(touch.x);
-                outputStream.writeFloat(touch.y);
-                outputStream.writeByte(touch.state.getCode());
-                Log.d("Touch!", "state: " + Integer.toString(touch.state.getCode()));
-            }
-            outputStream.writeLong(touch.timestamp);
-            outputStream.flush();
-        } catch (final IOException e) {
-            e.printStackTrace();
-        }
     }
 }

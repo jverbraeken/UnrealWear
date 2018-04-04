@@ -34,7 +34,7 @@ class TouchListener implements View.OnTouchListener {
             }
         }
         gestureDetector.onTouchEvent(motionEvent);
-        MainActivity.setTouch(touch);
+        MainActivity.addTouch(touch);
         return true;
     }
 

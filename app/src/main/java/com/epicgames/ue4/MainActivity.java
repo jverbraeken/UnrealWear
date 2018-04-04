@@ -32,7 +32,9 @@ import com.google.android.gms.wearable.Wearable;
 import java.io.DataOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Queue;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutionException;
@@ -61,9 +63,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
     private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
     private static final Acceleration acceleration = new Acceleration(0, 0, 0);
-    private static WifiManager.WifiLock wifiLock;
-    private static volatile boolean cancelInfiniteVibration;
-    private static volatile Touch touch = NO_TOUCH;
+    private static volatile boolean cancelInfiniteVibration = false;
+    private static volatile List<Touch> touch = new ArrayList<>();
     private static boolean doVibrateWhileShaking = true;
     private static volatile boolean forceVibration;
     private static volatile DataOutputStream channelOutputStream;
@@ -93,7 +94,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         return doVibrateWhileShaking;
     }
 
-    public static void setDoVibrateWhileShaking(boolean doVibrateWhileShaking) {
+    public static void setDoVibrateWhileShaking(final boolean doVibrateWhileShaking) {
         MainActivity.doVibrateWhileShaking = doVibrateWhileShaking;
     }
 
@@ -101,16 +102,18 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         return cancelInfiniteVibration;
     }
 
-    public static void setCancelInfiniteVibration(boolean cancelInfiniteVibration) {
+    public static void setCancelInfiniteVibration(final boolean cancelInfiniteVibration) {
         MainActivity.cancelInfiniteVibration = cancelInfiniteVibration;
     }
 
-    public static void setForceVibration(boolean forceVibration) {
+    public static void setForceVibration(final boolean forceVibration) {
         MainActivity.forceVibration = forceVibration;
     }
 
-    public static void resetTouch() {
-        touch = NO_TOUCH;
+    public static void nextTouch() {
+        if (touch.size() > 0) {
+            touch.remove(0);
+        }
     }
 
     public static DataOutputStream getChannelOutputStream() {
@@ -135,7 +138,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     }
 
     public static Touch getTouch() {
-        return touch;
+        return touch.isEmpty() ? null : touch.get(0);
     }
 
     public static void setShakingSensivity(int shakingSensivity) {
@@ -274,8 +277,10 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         }
     }
 
-    public static void setTouch(final Touch touch) {
-        MainActivity.touch = touch;
+    public static void addTouch(final Touch touch) {
+        if (MainActivity.touch.isEmpty() || MainActivity.touch.get(MainActivity.touch.size() - 1).state != Touch.STATE.HOLD) {
+            MainActivity.touch.add(touch);
+        }
     }
 
 
