@@ -299,12 +299,14 @@ public final class MainActivity extends Activity implements SensorEventListener 
 
     @SuppressWarnings("NumericCastThatLosesPrecision")
     private void storeRotation(final float[] values) {
-        final float[] rotMat = new float[9];
+        final float[] rotMat = new float[16];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
+        final float[] rotMatOut = new float[16];
+        SensorManager.remapCoordinateSystem(rotMat, SensorManager.AXIS_X, SensorManager.AXIS_Z, rotMatOut);
         final float[] q = new float[4];
         SensorManager.getQuaternionFromVector(q, values);
         final float[] orientation = new float[3];
-        SensorManager.getOrientation(rotMat, orientation);
+        SensorManager.getOrientation(rotMatOut, orientation);
 
 
         final float[] groundVector1 = {0.0f, 0.0f, 1.0f, 0.0f};
@@ -316,7 +318,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
         final float[] rotation = new float[3];
         rotation[0] = rotationConjToZ1[3] * 90;
         rotation[1] = rotationConjToZ2[3] * 90;
-        rotation[2] = orientation[0] * FROM_RADIANS_TO_DEGREES;
+        rotation[2] = (orientation[0] * FROM_RADIANS_TO_DEGREES + 360) % 360;
 
         Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
         rotationsLock.lock();
