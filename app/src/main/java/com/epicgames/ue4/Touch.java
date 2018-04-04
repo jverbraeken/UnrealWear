@@ -5,11 +5,6 @@ import android.support.annotation.NonNull;
 public final class Touch {
     public final float x;
     public final float y;
-    /**
-     * 0 = new touch
-     * 1 = hold
-     * 2 = released
-     */
     public final Touch.STATE state;
     public final long timestamp;
 
