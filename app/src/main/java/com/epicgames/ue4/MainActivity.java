@@ -54,7 +54,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
     private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
     private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
     private static final Acceleration acceleration = new Acceleration(0, 0, 0);
-    private static final String IP_ADDRESS = "192.168.178.29";
+    private static final String IP_ADDRESS = "192.168.1.13";
     private static volatile boolean cancelInfiniteVibration;
     private static boolean newTouchThisSample;
     private static Touch touch = NO_TOUCH;
@@ -323,7 +323,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
         Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
         rotationsLock.lock();
         try {
-            rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
+            rotations.add(new Rotation(rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3]));
         } finally {
             rotationsLock.unlock();
         }
