@@ -57,7 +57,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public static final int LOW_SHAKING_SENSIVITY = 11;
     public static final int MEDIUM_SHAKING_SENSIVITY = 15;
     public static final int HIGH_SHAKING_SENSIVITY = 19;
-    private static final long SEND_TIME_THRESHOLD = 1000 / 10; // 20 times per 1000 millisecond (= 20 times per second)
+    private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
     private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
     private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
@@ -318,27 +318,31 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
     @SuppressWarnings("NumericCastThatLosesPrecision")
     private void storeRotation(final float[] values) {
-        final float[] rotMat = new float[9];
+        final float[] rotMat = new float[16];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
+        final float[] rotMatOut = new float[16];
+        SensorManager.remapCoordinateSystem(rotMat, SensorManager.AXIS_X, SensorManager.AXIS_Z, rotMatOut);
         final float[] q = new float[4];
         SensorManager.getQuaternionFromVector(q, values);
         final float[] orientation = new float[3];
-        SensorManager.getOrientation(rotMat, orientation);
+        SensorManager.getOrientation(rotMatOut, orientation);
 
 
-        final float[] groundVector = {0.0f, 0.0f, 0.0f, 1.0f};
+        final float[] groundVector1 = {0.0f, 0.0f, 1.0f, 0.0f};
+        final float[] groundVector2 = {0.0f, 0.0f, 0.0f, 1.0f};
         final float[] qConjunct = {q[0], -q[1], -q[2], -q[3]};
-        final float[] rotationConjToZ = quaternion_mult(quaternion_mult(q, groundVector), qConjunct);
+        final float[] rotationConjToZ1 = quaternion_mult(quaternion_mult(q, groundVector1), qConjunct);
+        final float[] rotationConjToZ2 = quaternion_mult(quaternion_mult(q, groundVector2), qConjunct);
 
         final float[] rotation = new float[3];
-        rotation[0] = rotationConjToZ[1] * 90;
-        rotation[1] = rotationConjToZ[3] >= 0 ? rotationConjToZ[2] * 90 : 180 -rotationConjToZ[2] * 90;
-        rotation[2] = orientation[0] * FROM_RADIANS_TO_DEGREES;
+        rotation[0] = rotationConjToZ1[3] * 90;
+        rotation[1] = rotationConjToZ2[3] * 90;
+        rotation[2] = (orientation[0] * FROM_RADIANS_TO_DEGREES + 360) % 360;
 
-        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ[1], rotationConjToZ[2], rotationConjToZ[3], rotation[0], rotation[1], rotation[2]));
+        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
         rotationsLock.lock();
         try {
-            rotations.add(new Rotation(rotation[0], rotation[1], rotation[2]));
+            rotations.add(new Rotation(rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3]));
         } finally {
             rotationsLock.unlock();
         }
