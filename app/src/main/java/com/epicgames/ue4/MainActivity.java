@@ -65,6 +65,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final Acceleration acceleration = new Acceleration(0, 0, 0);
     private static volatile boolean cancelInfiniteVibration = false;
     private static volatile List<Touch> touch = new ArrayList<>();
+    private static volatile boolean touchDown;
     private static boolean doVibrateWhileShaking = true;
     private static volatile boolean forceVibration;
     private static volatile DataOutputStream channelOutputStream;
@@ -111,7 +112,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     }
 
     public static void nextTouch() {
-        if (touch.size() > 0) {
+        if (!touch.isEmpty()) {
             touch.remove(0);
         }
     }
@@ -139,6 +140,14 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
     public static Touch getTouch() {
         return touch.isEmpty() ? null : touch.get(0);
+    }
+
+    public static void setTouchDown(boolean isDown) {
+        touchDown = isDown;
+    }
+
+    public static boolean isTouchDown() {
+        return touchDown;
     }
 
     public static void setShakingSensivity(int shakingSensivity) {

@@ -24,13 +24,15 @@ class TouchListener implements View.OnTouchListener {
         if (motionEvent.getAction() == MotionEvent.ACTION_UP) {
             Log.d("Touch!#", "Up");
             touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), Touch.STATE.UP);
+            MainActivity.setTouchDown(false);
         } else if (motionEvent.getAction() == MotionEvent.ACTION_DOWN) {
             Log.d("Touch!#", "Down");
             touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), Touch.STATE.DOWN);
+            MainActivity.setTouchDown(true);
         } else {
-            if (Objects.equals(MainActivity.getTouch(), NO_TOUCH) || MainActivity.getTouch().state == Touch.STATE.DOWN) {
+            if (MainActivity.isTouchDown()) {
                 touch = new Touch(motionEvent.getRawX(), motionEvent.getRawY(), Touch.STATE.HOLD);
-                Log.d("Touch!#", "Touch registered");
+                Log.d("Touch!#", "Hold");
             }
         }
         gestureDetector.onTouchEvent(motionEvent);

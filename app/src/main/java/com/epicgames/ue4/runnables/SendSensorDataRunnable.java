@@ -1,5 +1,7 @@
 package com.epicgames.ue4.runnables;
 
+import android.util.Log;
+
 import com.epicgames.ue4.Acceleration;
 import com.epicgames.ue4.BuildConfig;
 import com.epicgames.ue4.MainActivity;
@@ -9,6 +11,7 @@ import com.epicgames.ue4.Touch;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.List;
+import java.util.Random;
 
 public final class SendSensorDataRunnable implements Runnable {
     private static void sendDataOverChannel(final DataOutputStream outputStream, final Rotation rotation, final Acceleration acceleration, final Touch touch) {
@@ -41,6 +44,7 @@ public final class SendSensorDataRunnable implements Runnable {
 
     @Override
     public void run() {
+        Log.d("Bar", "running: " + new Random().nextDouble());
         final DataOutputStream dataOutputStream = MainActivity.getChannelOutputStream();
         if (dataOutputStream != null) {
             final List<Rotation> rotations = MainActivity.getRotations();
