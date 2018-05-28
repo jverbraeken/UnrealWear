@@ -5,7 +5,6 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.support.annotation.NonNull;
@@ -13,8 +12,6 @@ import android.support.annotation.Nullable;
 import android.support.wearable.activity.WearableActivity;
 import android.util.Log;
 import android.view.GestureDetector;
-import android.view.MotionEvent;
-import android.view.View;
 import android.widget.ImageView;
 
 import com.epicgames.ue4.runnables.ChannelCreateRunnable;
@@ -32,9 +29,7 @@ import com.google.android.gms.wearable.Wearable;
 import java.io.DataOutputStream;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Queue;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutionException;
@@ -63,6 +58,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
     private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
     private static final Acceleration acceleration = new Acceleration(0, 0, 0);
+    private static final float[] UP_VECTOR = {0, 0, 1};
     private static volatile boolean cancelInfiniteVibration = false;
     private static volatile List<Touch> touch = new ArrayList<>();
     private static volatile boolean touchDown;
@@ -75,9 +71,12 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private SensorManager sensorManager;
     private Sensor gyroscope;
     private Sensor accelerometer;
+    private Sensor gravity;
+    private Sensor magnetometer;
     private Vibrator vibrator;
     private Timer vibrationTimer = new Timer("vibration timer");
     private long shakeVibrationStartTime;
+    private float[] gravityArray = new float[3];
 
     /**
      * Returns true if the device is currently accelerating.
@@ -142,12 +141,12 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         return touch.isEmpty() ? null : touch.get(0);
     }
 
-    public static void setTouchDown(boolean isDown) {
-        touchDown = isDown;
-    }
-
     public static boolean isTouchDown() {
         return touchDown;
+    }
+
+    public static void setTouchDown(boolean isDown) {
+        touchDown = isDown;
     }
 
     public static void setShakingSensivity(int shakingSensivity) {
@@ -158,6 +157,23 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         rotations.clear();
     }
 
+    public static void addTouch(final Touch touch) {
+        if (MainActivity.touch.isEmpty() || MainActivity.touch.get(MainActivity.touch.size() - 1).state != Touch.STATE.HOLD) {
+            MainActivity.touch.add(touch);
+        }
+    }
+
+    public static float[] multiply(float[][] a, float[] x) {
+        int m = a.length;
+        int n = a[0].length;
+        if (x.length != n) throw new RuntimeException("Illegal matrix dimensions.");
+        float[] y = new float[m];
+        for (int i = 0; i < m; i++)
+            for (int j = 0; j < n; j++)
+                y[i] += a[i][j] * x[j];
+        return y;
+    }
+
     @Override
     protected void onCreate(final Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -166,7 +182,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
 
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+        magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        gravity = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY);
         vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
 
         final ImageView imageView = (ImageView) findViewById(R.id.imageView);
@@ -225,6 +243,33 @@ public final class MainActivity extends WearableActivity implements SensorEventL
             onGyroscopeChanged(sensorEvent.values);
         } else if (sensorType == Sensor.TYPE_ACCELEROMETER) {
             onAccelerometerChanged(sensorEvent.values, sensorEvent.timestamp);
+            Log.d(TAG, "Accelerometer: " + sensorEvent.values[0] + ", " + sensorEvent.values[1] + ", " + sensorEvent.values[2]);
+            float alpha = 0.8f;
+            gravityArray[0] = alpha * gravityArray[0] + (1 - alpha) * sensorEvent.values[0];
+            gravityArray[1] = alpha * gravityArray[1] + (1 - alpha) * sensorEvent.values[1];
+            gravityArray[2] = alpha * gravityArray[2] + (1 - alpha) * sensorEvent.values[2];
+        } else if (sensorType == Sensor.TYPE_GRAVITY) {
+            float alpha = 0.8f;
+            gravityArray[0] = alpha * gravityArray[0] + (1 - alpha) * sensorEvent.values[0];
+            gravityArray[1] = alpha * gravityArray[1] + (1 - alpha) * sensorEvent.values[1];
+            gravityArray[2] = alpha * gravityArray[2] + (1 - alpha) * sensorEvent.values[2];
+            Log.d(TAG, "Gravity: " + gravityArray[0] + ", " + gravityArray[1] + ", " + gravityArray[2]);
+        } else if (sensorType == Sensor.TYPE_MAGNETIC_FIELD) {
+            float[] magnetic = new float[3];
+            magnetic[0] = sensorEvent.values[0];
+            magnetic[1] = sensorEvent.values[1];
+            magnetic[2] = sensorEvent.values[2];
+
+            float[] R = new float[9];
+            float[] I = new float[9];
+            SensorManager.getRotationMatrix(R, I, gravityArray, magnetic);
+            float[] A_D = sensorEvent.values.clone();
+            float[] A_W = new float[3];
+            A_W[0] = R[0] * A_D[0] + R[1] * A_D[1] + R[2] * A_D[2];
+            A_W[1] = R[3] * A_D[0] + R[4] * A_D[1] + R[5] * A_D[2];
+            A_W[2] = R[6] * A_D[0] + R[7] * A_D[1] + R[8] * A_D[2];
+
+            Log.d(TAG, "Compass: " + A_W[0] + ", " + A_W[1] + ", " + A_W[2]);
         }
     }
 
@@ -286,14 +331,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         }
     }
 
-    public static void addTouch(final Touch touch) {
-        if (MainActivity.touch.isEmpty() || MainActivity.touch.get(MainActivity.touch.size() - 1).state != Touch.STATE.HOLD) {
-            MainActivity.touch.add(touch);
-        }
-    }
-
-
-
     @Override
     public void onAccuracyChanged(final Sensor sensor, final int i) {
 
@@ -306,6 +343,8 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         Log.d(TAG, "resumed");
         sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+        sensorManager.registerListener(this, magnetometer, SensorManager.SENSOR_DELAY_FASTEST);
+        sensorManager.registerListener(this, gravity, SensorManager.SENSOR_DELAY_FASTEST);
     }
 
     @Override
@@ -320,38 +359,126 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private float[] quaternion_mult(final float[] q, final float[] r) {
         return new float[]{
                 r[0] * q[0] - r[1] * q[1] - r[2] * q[2] - r[3] * q[3],
-                r[0] * q[1] + r[1] * q[0] - r[2] * q[3] + r[3] * q[2],
-                r[0] * q[2] + r[1] * q[3] + r[2] * q[0] - r[3] * q[1],
-                r[0] * q[3] - r[1] * q[2] + r[2] * q[1] + r[3] * q[0]};
+                r[0] * q[1] + r[1] * q[0] + r[2] * q[3] - r[3] * q[2],
+                r[0] * q[2] - r[1] * q[3] + r[2] * q[0] + r[3] * q[1],
+                r[0] * q[3] + r[1] * q[2] - r[2] * q[1] + r[3] * q[0]};
     }
 
-    @SuppressWarnings("NumericCastThatLosesPrecision")
+    private Vector3 quaternion_mult(final float[] q, Vector3 v) {
+        Vector3 uv, uuv;
+        Vector3 qvec = new Vector3(q[1], q[2], q[3]);
+        uv = qvec.crossProduct(v);
+        uuv = qvec.crossProduct(uv);
+        uv.multiply(2.0f * q[0]);
+        uuv.multiply(2.0f);
+        return (v.add(uv)).add(uuv);
+    }
+
+    @SuppressWarnings("NumericCastThatLosesPrecision | NonReproducibleMathCall")
     private void storeRotation(final float[] values) {
-        final float[] rotMat = new float[16];
+        final float[] rotMat = new float[9];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
-        final float[] rotMatOut = new float[16];
-        SensorManager.remapCoordinateSystem(rotMat, SensorManager.AXIS_X, SensorManager.AXIS_Z, rotMatOut);
-        final float[] q = new float[4];
-        SensorManager.getQuaternionFromVector(q, values);
-        final float[] orientation = new float[3];
-        SensorManager.getOrientation(rotMatOut, orientation);
+        final float[][] rotMat2 = new float[3][3];
+        rotMat2[0][0] = rotMat[0];
+        rotMat2[0][1] = rotMat[1];
+        rotMat2[0][2] = rotMat[2];
+        rotMat2[1][0] = rotMat[3];
+        rotMat2[1][1] = rotMat[4];
+        rotMat2[1][2] = rotMat[5];
+        rotMat2[2][0] = rotMat[6];
+        rotMat2[2][1] = rotMat[7];
+        rotMat2[2][2] = rotMat[8];
+        final float[] newVector = multiply(rotMat2, UP_VECTOR);
+        final float[] newVector2 = multiply(rotMat2, new float[]{1, 0, 0});
+        float[] newVector3 = multiply(rotMat2, new float[]{0, 1, 0});
+        Log.d(TAG, String.format("newVector: %.2f, %.2f, %.2f", newVector[0], newVector[1], newVector[2]));
+        Log.d(TAG, String.format("newVector3: %.2f, %.2f, %.2f", newVector3[0], newVector3[1], newVector3[2]));
+
+        final double angleXY = Math.atan2(newVector[0], newVector[1]);
+        final double angleXZ = Math.atan2(newVector[0], newVector[2]);
+        final double angleYZ = Math.atan2(newVector[1], newVector[2]);
+        final double[] compensatedVector = {
+                newVector[0] * Math.cos(angleXY) - newVector[1] * Math.sin(angleXY),
+                newVector[0] * Math.sin(angleXY) + newVector[1] * Math.cos(angleXY),
+                newVector[2]
+        };
+        // compensatedVector[0] should always be 0 !!!
+        double length = Math.sqrt(compensatedVector[1] * compensatedVector[1] + compensatedVector[2] * compensatedVector[2]);
+        compensatedVector[1] /= length;
+        compensatedVector[2] /= length;
+        Log.d(TAG, String.format("compensatedVector: %.2f, %.2f, %.2f", compensatedVector[0], compensatedVector[1], compensatedVector[2]));
 
 
-        final float[] groundVector1 = {0.0f, 0.0f, 1.0f, 0.0f};
-        final float[] groundVector2 = {0.0f, 0.0f, 0.0f, 1.0f};
-        final float[] qConjunct = {q[0], -q[1], -q[2], -q[3]};
-        final float[] rotationConjToZ1 = quaternion_mult(quaternion_mult(q, groundVector1), qConjunct);
-        final float[] rotationConjToZ2 = quaternion_mult(quaternion_mult(q, groundVector2), qConjunct);
+        double angle = Math.acos(newVector[2] / Math.sqrt(newVector[0] * newVector[0] + newVector[1] * newVector[1] + newVector[2] * newVector[2]));
+        Log.d(TAG, String.format("angle: %f", angle));
+        double[] perpendicular = {
+                -newVector[1],
+                newVector[0],
+                0
+        };
 
-        final float[] rotation = new float[3];
-        rotation[0] = rotationConjToZ1[3] * 90;
-        rotation[1] = rotationConjToZ2[3] * 90;
-        rotation[2] = (orientation[0] * FROM_RADIANS_TO_DEGREES + 360) % 360;
+        double cosTheta = Math.cos(angle);
+        double sinTheta = Math.sin(angle);
+        double[] vxcos_theta = {
+                newVector3[0] * cosTheta,
+                newVector3[1] * cosTheta,
+                newVector3[2] * cosTheta
+        };
+        double[] crossProduct = {
+            perpendicular[1] * newVector3[2] - perpendicular[2] * newVector3[1],
+                perpendicular[2] * newVector3[0] - perpendicular[0] * newVector3[2],
+                perpendicular[0] * newVector3[1] - perpendicular[1] * newVector3[0]
+        };
+        crossProduct[0] *= sinTheta;
+        crossProduct[1] *= sinTheta;
+        crossProduct[2] *= sinTheta;
+        double[] dotProduct = {
+                perpendicular[0] * newVector3[0],
+                perpendicular[1] * newVector3[1],
+                perpendicular[2] * newVector3[2]
+        };
+        dotProduct[0] *= perpendicular[0];
+        dotProduct[1] *= perpendicular[1];
+        dotProduct[2] *= perpendicular[2];
+        dotProduct[0] *= 1 - cosTheta;
+        dotProduct[1] *= 1 - cosTheta;
+        dotProduct[2] *= 1 - cosTheta;
 
-        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
+        double[] finalRotation = {
+                vxcos_theta[0] + crossProduct[0] + dotProduct[0],
+                vxcos_theta[1] + crossProduct[1] + dotProduct[1],
+                vxcos_theta[2] + crossProduct[2] + dotProduct[2]
+        };
+        Log.d(TAG, String.format("finalRotation: %.2f, %.2f, %.2f", finalRotation[0], finalRotation[1], finalRotation[2]));
+
+
+        /*final double[] compensatedVector2 = {
+                newVector2[0] * Math.cos(angleXZ) - newVector2[2] * Math.sin(angleXZ),
+                newVector2[1],
+                newVector2[0] * Math.sin(angleXZ) + newVector2[2] * Math.cos(angleXZ)
+        };
+        // compensatedVector[0] should always be 0 !!!
+        length = Math.sqrt(compensatedVector2[0] * compensatedVector2[0] + compensatedVector2[1] * compensatedVector2[1] + compensatedVector2[2] * compensatedVector2[2]);
+        compensatedVector2[0] /= length;
+        compensatedVector2[1] /= length;
+        compensatedVector2[2] /= length;
+        Log.d(TAG, String.format("compensatedVector2: %.2f, %.2f, %.2f", compensatedVector2[0], compensatedVector2[1], compensatedVector2[2]));
+
+        final double[] compensatedVector22 = {
+                compensatedVector2[0],
+                compensatedVector2[1] * Math.cos(angleYZ) - compensatedVector2[2] * Math.sin(angleYZ),
+                compensatedVector2[1] * Math.sin(angleYZ) + compensatedVector2[2] * Math.cos(angleYZ)
+        };
+        // compensatedVector[0] should always be 0 !!!
+        length = Math.sqrt(compensatedVector22[0] * compensatedVector22[0] + compensatedVector22[1] * compensatedVector22[1] + compensatedVector22[2] * compensatedVector22[2]);
+        compensatedVector22[0] /= length;
+        compensatedVector22[1] /= length;
+        compensatedVector22[2] /= length;
+        Log.d(TAG, String.format("compensatedVector2-2: %.2f, %.2f, %.2f", compensatedVector22[0], compensatedVector22[1], compensatedVector22[2]));
+        */
         rotationsLock.lock();
         try {
-            rotations.add(new Rotation(rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3]));
+            // rotations.add(new Rotation(rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
         } finally {
             rotationsLock.unlock();
         }

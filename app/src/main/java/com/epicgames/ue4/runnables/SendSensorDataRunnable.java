@@ -17,9 +17,13 @@ public final class SendSensorDataRunnable implements Runnable {
     private static void sendDataOverChannel(final DataOutputStream outputStream, final Rotation rotation, final Acceleration acceleration, final Touch touch) {
         try {
             outputStream.writeByte(MainActivity.COMTP_SENSOR_DATA);
-            outputStream.writeFloat(rotation.x);
-            outputStream.writeFloat(rotation.y);
-            outputStream.writeFloat(rotation.z);
+            Log.d("Foo", String.format("Rotation: %.2f %.2f %.2f || %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotation.vectorX, rotation.vectorY, rotation.vectorZ, rotation.rotX, rotation.rotY, rotation.rotZ, acceleration.x, acceleration.y, acceleration.z));
+            outputStream.writeFloat(rotation.vectorX);
+            outputStream.writeFloat(rotation.vectorY);
+            outputStream.writeFloat(rotation.vectorZ);
+            outputStream.writeFloat(rotation.rotX);
+            outputStream.writeFloat(rotation.rotY);
+            outputStream.writeFloat(rotation.rotZ);
             outputStream.writeLong(rotation.timestamp);
             outputStream.writeFloat(acceleration.x);
             outputStream.writeFloat(acceleration.y);
@@ -72,18 +76,27 @@ public final class SendSensorDataRunnable implements Runnable {
     private Rotation avgAndResetRotations() {
         MainActivity.rotationsLock.lock();
         final List<Rotation> rotations = MainActivity.getRotations();
-        float x = 0;
-        float y = 0;
-        float z = 0;
+        float vectorX = 0;
+        float vectorY = 0;
+        float vectorZ = 0;
+        float rotX = 0;
+        float rotY = 0;
+        float rotZ = 0;
         for (final Rotation rotation : rotations) {
-            x += rotation.x;
-            y += rotation.y;
-            z += rotation.z;
+            vectorX += rotation.vectorX;
+            vectorY += rotation.vectorY;
+            vectorZ += rotation.vectorZ;
+            rotX += rotation.rotX;
+            rotY += rotation.rotY;
+            rotZ += rotation.rotZ;
         }
-        x /= rotations.size();
-        y /= rotations.size();
-        z /= rotations.size();
-        final Rotation rotation = new Rotation(x, y, z, rotations.get(rotations.size() - 1).timestamp);
+        vectorX /= rotations.size();
+        vectorY /= rotations.size();
+        vectorZ /= rotations.size();
+        rotX /= rotations.size();
+        rotY /= rotations.size();
+        rotZ /= rotations.size();
+        final Rotation rotation = new Rotation(vectorX, vectorY, vectorZ, rotX, rotY, rotZ, rotations.get(rotations.size() - 1).timestamp);
         MainActivity.resetRotations();
         MainActivity.rotationsLock.unlock();
         return rotation;
