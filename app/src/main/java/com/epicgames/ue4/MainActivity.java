@@ -327,8 +327,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     private void storeRotation(final float[] values) {
         final float[] rotMat = new float[9];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
-        float[] rotMat2 = new float[9];
-        SensorManager.remapCoordinateSystem(rotMat, SensorManager.AXIS_X, SensorManager.AXIS_Z, rotMat2);
         Log.d(TAG, String.format("rotMat: %.2f, %.2f, %.2f | %.2f, %.2f, %.2f | %.2f, %.2f, %.2f",
                 rotMat[0],
                 rotMat[1],
@@ -342,7 +340,7 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         );
         rotationsLock.lock();
         try {
-            rotations.add(rotMat2);
+            rotations.add(rotMat);
         } finally {
             rotationsLock.unlock();
         }
