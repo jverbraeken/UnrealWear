@@ -54,12 +54,9 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     public static final int HIGH_SHAKING_SENSIVITY = 19;
     private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 20 times per 1000 millisecond (= 20 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
-    private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
-    private static final List<Rotation> rotations = Collections.synchronizedList(new ArrayList<Rotation>(15));
-    private static final Acceleration accelerationWithGravity = new Acceleration(0, 0, 0);
-    private static final Acceleration acceleration = new Acceleration(0, 0, 0);
-    private static final float[] SIDE_VECTOR = {0, 1, 0};
-    private static final float[] UP_VECTOR = {0, 0, 1};
+    private static final List<float[]> rotations = Collections.synchronizedList(new ArrayList<float[]>(15));
+    private static final float[] accelerationWithGravity = new float[] {0, 0, 0};
+    private static final float[] acceleration = new float[] {0, 0, 0};
     private static volatile boolean cancelInfiniteVibration = false;
     private static volatile List<Touch> touch = new ArrayList<>();
     private static volatile boolean touchDown;
@@ -120,19 +117,19 @@ public final class MainActivity extends WearableActivity implements SensorEventL
     }
 
     private static void updateAcceleration(final float[] values) {
-        accelerationWithGravity.x = LOW_PASS_FILTER * accelerationWithGravity.x + (1 - LOW_PASS_FILTER) * values[0];
-        accelerationWithGravity.y = LOW_PASS_FILTER * accelerationWithGravity.y + (1 - LOW_PASS_FILTER) * values[1];
-        accelerationWithGravity.z = LOW_PASS_FILTER * accelerationWithGravity.z + (1 - LOW_PASS_FILTER) * values[2];
-        acceleration.x = values[0] - accelerationWithGravity.x;
-        acceleration.y = values[1] - accelerationWithGravity.y;
-        acceleration.z = values[2] - accelerationWithGravity.z;
+        accelerationWithGravity[0] = LOW_PASS_FILTER * accelerationWithGravity[0] + (1 - LOW_PASS_FILTER) * values[0];
+        accelerationWithGravity[1] = LOW_PASS_FILTER * accelerationWithGravity[1] + (1 - LOW_PASS_FILTER) * values[1];
+        accelerationWithGravity[2] = LOW_PASS_FILTER * accelerationWithGravity[2] + (1 - LOW_PASS_FILTER) * values[2];
+        acceleration[0] = values[0] - accelerationWithGravity[0];
+        acceleration[1] = values[1] - accelerationWithGravity[1];
+        acceleration[2] = values[2] - accelerationWithGravity[2];
     }
 
-    public static List<Rotation> getRotations() {
+    public static List<float[]> getRotations() {
         return new ArrayList<>(rotations);
     }
 
-    public static Acceleration getAcceleration() {
+    public static float[] getAcceleration() {
         return acceleration;
     }
 
@@ -160,17 +157,6 @@ public final class MainActivity extends WearableActivity implements SensorEventL
         if (MainActivity.touch.isEmpty() || MainActivity.touch.get(MainActivity.touch.size() - 1).state != Touch.STATE.HOLD) {
             MainActivity.touch.add(touch);
         }
-    }
-
-    public static float[] multiply(float[][] a, float[] x) {
-        int m = a.length;
-        int n = a[0].length;
-        if (x.length != n) throw new RuntimeException("Illegal matrix dimensions.");
-        float[] y = new float[m];
-        for (int i = 0; i < m; i++)
-            for (int j = 0; j < n; j++)
-                y[i] += a[i][j] * x[j];
-        return y;
     }
 
     @Override
@@ -337,110 +323,26 @@ public final class MainActivity extends WearableActivity implements SensorEventL
                 r[0] * q[3] + r[1] * q[2] - r[2] * q[1] + r[3] * q[0]};
     }
 
-    private Vector3 quaternion_mult(final float[] q, Vector3 v) {
-        Vector3 uv, uuv;
-        Vector3 qvec = new Vector3(q[1], q[2], q[3]);
-        uv = qvec.crossProduct(v);
-        uuv = qvec.crossProduct(uv);
-        uv.multiply(2.0f * q[0]);
-        uuv.multiply(2.0f);
-        return (v.add(uv)).add(uuv);
-    }
-
     @SuppressWarnings("NumericCastThatLosesPrecision | NonReproducibleMathCall")
     private void storeRotation(final float[] values) {
         final float[] rotMat = new float[9];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
-        final float[][] rotMat2 = new float[3][3];
-        rotMat2[0][0] = rotMat[0];
-        rotMat2[0][1] = rotMat[1];
-        rotMat2[0][2] = rotMat[2];
-        rotMat2[1][0] = rotMat[3];
-        rotMat2[1][1] = rotMat[4];
-        rotMat2[1][2] = rotMat[5];
-        rotMat2[2][0] = rotMat[6];
-        rotMat2[2][1] = rotMat[7];
-        rotMat2[2][2] = rotMat[8];
-        final float[] transformedUpVector = multiply(rotMat2, UP_VECTOR);
-
-        // 1
-
-        Log.d(TAG, String.format("transformedUpVector: %.2f, %.2f, %.2f",
-                transformedUpVector[0],
-                transformedUpVector[1],
-                transformedUpVector[2])
-        );
-
-        //
-
-        final float transformedUpVectorXY_Angle = (float) Math.atan2(transformedUpVector[0], transformedUpVector[1]);
-        final float angleCos = (float) Math.cos(transformedUpVectorXY_Angle);
-        final float angleSin = (float) Math.sin(transformedUpVectorXY_Angle);
-        final double[] compensatedTransformedUpVector = {
-                0 /* transformedUpVector[0] * angleCos - transformedUpVector[1] * angleSin */,
-                transformedUpVector[0] * angleSin + transformedUpVector[1] * angleCos,
-                transformedUpVector[2]
-        };
-        // compensatedVector[0] should always be 0 !!!
-        final double compensatedTransformedUpVectorLength = Math.sqrt(
-                compensatedTransformedUpVector[1] * compensatedTransformedUpVector[1] 
-                        + compensatedTransformedUpVector[2] * compensatedTransformedUpVector[2]
-        );
-        final double[] normalizedCompensatedTransformedUpVector = {
-                0,
-                compensatedTransformedUpVector[1] / compensatedTransformedUpVectorLength,
-                compensatedTransformedUpVector[2] / compensatedTransformedUpVectorLength
-        };
-
-        // 2
-
-        Log.d(TAG, String.format("normalizedCompensatedTransformedUpVector: %.2f, %.2f, %.2f",
-                normalizedCompensatedTransformedUpVector[0],
-                normalizedCompensatedTransformedUpVector[1],
-                normalizedCompensatedTransformedUpVector[2])
-        );
-
-        //
-
-        final double transformedUpVectorZZ_Angle = Math.acos(transformedUpVector[2] / Math.sqrt(transformedUpVector[0] * transformedUpVector[0] + transformedUpVector[1] * transformedUpVector[1] + transformedUpVector[2] * transformedUpVector[2]));
-        Log.d(TAG, String.format("angle: %f", transformedUpVectorZZ_Angle));
-        final float[] perpendicularTransformedUpVector = {
-                -transformedUpVector[1],
-                transformedUpVector[0],
-                0
-        };
-        final double perpendicularTransformedUpVector_Length = Math.sqrt(perpendicularTransformedUpVector[0] * perpendicularTransformedUpVector[0] + perpendicularTransformedUpVector[1] * perpendicularTransformedUpVector[1]);
-        perpendicularTransformedUpVector[0] /= perpendicularTransformedUpVector_Length;
-        perpendicularTransformedUpVector[1] /= perpendicularTransformedUpVector_Length;
-        Log.d(TAG, String.format("perpendicular: %.2f, %.2f, %.2f", perpendicularTransformedUpVector[0], perpendicularTransformedUpVector[1], perpendicularTransformedUpVector[2]));
-
-        final float cosTheta = (float) Math.cos(-transformedUpVectorZZ_Angle);
-        final float cosThetaInv = 1 - cosTheta;
-        final float sinTheta = (float) Math.sin(-transformedUpVectorZZ_Angle);
-
-        final float[] u = perpendicularTransformedUpVector;
-        final float[] u2 = {u[0] * u[0], u[1] * u[1], u[2] * u[2]};
-
-        final float[][] rotMat3 = {
-                {cosTheta + u2[0] * cosThetaInv, u[0] * u[1] * cosThetaInv - u[2] * sinTheta, u[0] * u[2] * cosThetaInv + u[1] * sinTheta},
-                {u[1] * u[0] * cosThetaInv + u[2] * sinTheta, cosTheta + u2[1] * cosThetaInv, u[1] * u[2] * cosThetaInv - u[0] * sinTheta},
-                {u[2] * u[0] * cosThetaInv - u[1] * sinTheta, u[2] * u[1] * cosThetaInv + u[0] * sinTheta, cosTheta + u2[2] * cosThetaInv}
-        };
-
-        float[] transformedSideVector = multiply(rotMat2, SIDE_VECTOR);
-        float[] flatTransformedSideVector = multiply(rotMat3, transformedSideVector);
-        final float finalRotation = (float) Math.atan2(flatTransformedSideVector[0], flatTransformedSideVector[1]);
-
-        Log.d(TAG, String.format("finalRotation: %.2f", finalRotation));
-
-        Log.d(TAG, String.format("finalVector: %.2f, %.2f, %.2f",
-                finalRotation,
-                normalizedCompensatedTransformedUpVector[1],
-                normalizedCompensatedTransformedUpVector[2])
+        float[] rotMat2 = new float[9];
+        SensorManager.remapCoordinateSystem(rotMat, SensorManager.AXIS_X, SensorManager.AXIS_Z, rotMat2);
+        Log.d(TAG, String.format("rotMat: %.2f, %.2f, %.2f | %.2f, %.2f, %.2f | %.2f, %.2f, %.2f",
+                rotMat[0],
+                rotMat[1],
+                rotMat[2],
+                rotMat[3],
+                rotMat[4],
+                rotMat[5],
+                rotMat[6],
+                rotMat[7],
+                rotMat[8])
         );
         rotationsLock.lock();
         try {
-            // rotations.add(new Rotation(rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
+            rotations.add(rotMat2);
         } finally {
             rotationsLock.unlock();
         }

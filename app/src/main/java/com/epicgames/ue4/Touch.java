@@ -6,7 +6,6 @@ public final class Touch {
     public final float x;
     public final float y;
     public final Touch.STATE state;
-    public final long timestamp;
 
     public enum STATE {
         DOWN((byte) 1),
@@ -32,7 +31,6 @@ public final class Touch {
         this.x = x;
         this.y = y;
         this.state = state;
-        this.timestamp = System.currentTimeMillis();
     }
 
     @Override
