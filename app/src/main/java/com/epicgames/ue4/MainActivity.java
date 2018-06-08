@@ -6,7 +6,6 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Vibrator;
 import android.util.Log;
@@ -39,7 +38,6 @@ public final class MainActivity extends Activity implements SensorEventListener 
     public static final Lock sendData = new ReentrantLock();
     public static final Lock rotationsLock = new ReentrantLock();
     public static final Touch NO_TOUCH = new Touch(-1, -1, (byte) 0);
-
     public static final byte COMTP_SENSOR_DATA = 1;
     public static final byte COMTP_SHAKING_STARTED = 2;
     public static final byte COMTP_SHAKING_STOPPED = 3;
@@ -48,6 +46,9 @@ public final class MainActivity extends Activity implements SensorEventListener 
     public static final int HIGH_SHAKING_SENSIVITY = 19;
     public static final InetAddress INET_ADDRESS;
     public static final int PORT = 55056;
+    private static final float[] X_VECTOR = {1, 0, 0};
+    private static final float[] Y_VECTOR = {0, 1, 0};
+    private static final float[] Z_VECTOR = {0, 0, 1};
     private static final long SEND_TIME_THRESHOLD = 1000 / 25; // 25 times per 1000 millisecond (= 25 times per second)
     private static final float LOW_PASS_FILTER = 0.8f;
     private static final float FROM_RADIANS_TO_DEGREES = 180.f / (float) Math.PI;
@@ -157,6 +158,21 @@ public final class MainActivity extends Activity implements SensorEventListener 
 
     public static void resetRotations() {
         rotations.clear();
+    }
+
+    private static float[] multiply(final float[][] a, final float[] x) {
+        final int m = a.length;
+        final int n = a[0].length;
+        if (x.length != n) {
+            throw new RuntimeException("Illegal matrix dimensions.");
+        }
+        final float[] y = new float[m];
+        for (int i = 0; i < m; i++) {
+            for (int j = 0; j < n; j++) {
+                y[i] += a[i][j] * x[j];
+            }
+        }
+        return y;
     }
 
     @Override
@@ -276,8 +292,8 @@ public final class MainActivity extends Activity implements SensorEventListener 
     protected void onResume() {
         super.onResume();
         Log.d(TAG, "resumed");
-        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_FASTEST);
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_FASTEST);
+        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_UI);
+        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_UI);
     }
 
     @Override
@@ -299,33 +315,218 @@ public final class MainActivity extends Activity implements SensorEventListener 
 
     @SuppressWarnings("NumericCastThatLosesPrecision")
     private void storeRotation(final float[] values) {
-        final float[] rotMat = new float[16];
+        final float[] rotMat = new float[9];
         SensorManager.getRotationMatrixFromVector(rotMat, values);
-        final float[] rotMatOut = new float[16];
-        SensorManager.remapCoordinateSystem(rotMat, SensorManager.AXIS_X, SensorManager.AXIS_Z, rotMatOut);
-        final float[] q = new float[4];
-        SensorManager.getQuaternionFromVector(q, values);
-        final float[] orientation = new float[3];
-        SensorManager.getOrientation(rotMatOut, orientation);
+        final float[][] rotMat2 = new float[3][3];
+        rotMat2[0][0] = rotMat[0];
+        rotMat2[0][1] = rotMat[1];
+        rotMat2[0][2] = rotMat[2];
+        rotMat2[1][0] = rotMat[3];
+        rotMat2[1][1] = rotMat[4];
+        rotMat2[1][2] = rotMat[5];
+        rotMat2[2][0] = rotMat[6];
+        rotMat2[2][1] = rotMat[7];
+        rotMat2[2][2] = rotMat[8];
 
 
-        final float[] groundVector1 = {0.0f, 0.0f, 1.0f, 0.0f};
-        final float[] groundVector2 = {0.0f, 0.0f, 0.0f, 1.0f};
-        final float[] qConjunct = {q[0], -q[1], -q[2], -q[3]};
-        final float[] rotationConjToZ1 = quaternion_mult(quaternion_mult(q, groundVector1), qConjunct);
-        final float[] rotationConjToZ2 = quaternion_mult(quaternion_mult(q, groundVector2), qConjunct);
 
-        final float[] rotation = new float[3];
-        rotation[0] = rotationConjToZ1[3] * 90;
-        rotation[1] = rotationConjToZ2[3] * 90;
-        rotation[2] = (orientation[0] * FROM_RADIANS_TO_DEGREES + 360) % 360;
 
-        Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
+        /*
+
+
+        Get X-coordinate of X-vector
+        If Z-coordinate of Z-vector is negative: Y-coordinate of X-vector *= -1
+        Angle = atan2(x, y)
+
+
+         */
+
+
+
+
+
+
+        Log.d(TAG, String.format("rotMat2: %.2f, %.2f, %.2f",
+                rotMat[0],
+                rotMat[3],
+                rotMat[6])
+        );
+
+        // 1
+
+        final float[] transformedXVector = multiply(rotMat2, X_VECTOR);
+        Log.d(TAG, String.format("transformedXVector: %.2f, %.2f, %.2f",
+                transformedXVector[0],
+                transformedXVector[1],
+                transformedXVector[2])
+        );
+        final float[] transformedYVector = multiply(rotMat2, Y_VECTOR);
+        Log.d(TAG, String.format("transformedYVector: %.2f, %.2f, %.2f",
+                transformedYVector[0],
+                transformedYVector[1],
+                transformedYVector[2])
+        );
+        final float[] transformedZVector = multiply(rotMat2, Z_VECTOR);
+        Log.d(TAG, String.format("transformedYVector: %.2f, %.2f, %.2f",
+                transformedZVector[0],
+                transformedZVector[1],
+                transformedZVector[2])
+        );
+
+        //
+
+        float transformedUpVectorXY_Angle = (float) Math.atan2(transformedZVector[0], transformedZVector[1]);
+        Log.d(TAG, String.format("transformedUpVectorXY_Angle: %f", transformedUpVectorXY_Angle));
+        final float angleCos = (float) Math.cos(transformedUpVectorXY_Angle);
+        final float angleSin = (float) Math.sin(transformedUpVectorXY_Angle);
+        final double[] compensatedTransformedUpVector = {
+                transformedZVector[0] * angleCos - transformedZVector[1] * angleSin,
+                transformedZVector[0] * angleSin + transformedZVector[1] * angleCos,
+                transformedZVector[2]
+        };
+        // compensatedVector[0] should always be 0 !!!
+        final double compensatedTransformedUpVectorLength = Math.sqrt(
+                compensatedTransformedUpVector[1] * compensatedTransformedUpVector[1]
+                        + compensatedTransformedUpVector[2] * compensatedTransformedUpVector[2]
+        );
+        final double[] normalizedCompensatedTransformedUpVector = {
+                0,
+                compensatedTransformedUpVector[1] / compensatedTransformedUpVectorLength,
+                compensatedTransformedUpVector[2] / compensatedTransformedUpVectorLength
+        };
+
+        // 2
+
+        Log.d(TAG, String.format("normalizedCompensatedTransformedUpVector: %.2f, %.2f, %.2f",
+                normalizedCompensatedTransformedUpVector[0],
+                normalizedCompensatedTransformedUpVector[1],
+                normalizedCompensatedTransformedUpVector[2])
+        );
+
+        //
+
+        final double transformedUpVectorZZ_Angle = Math.acos(transformedZVector[2] / Math.sqrt(transformedZVector[0] * transformedZVector[0] + transformedZVector[1] * transformedZVector[1] + transformedZVector[2] * transformedZVector[2]));
+        Log.d(TAG, String.format("angle: %f", transformedUpVectorZZ_Angle));
+        final float[] perpendicularTransformedUpVector = {
+                -transformedZVector[1],
+                transformedZVector[0],
+                0
+        };
+        final double perpendicularTransformedUpVector_Length = Math.sqrt(perpendicularTransformedUpVector[0] * perpendicularTransformedUpVector[0] + perpendicularTransformedUpVector[1] * perpendicularTransformedUpVector[1]);
+        perpendicularTransformedUpVector[0] /= perpendicularTransformedUpVector_Length;
+        perpendicularTransformedUpVector[1] /= perpendicularTransformedUpVector_Length;
+        Log.d(TAG, String.format("perpendicular: %.2f, %.2f, %.2f", perpendicularTransformedUpVector[0], perpendicularTransformedUpVector[1], perpendicularTransformedUpVector[2]));
+
+        final float cosTheta = (float) Math.cos(-transformedUpVectorZZ_Angle);
+        final float cosThetaInv = 1 - cosTheta;
+        final float sinTheta = (float) Math.sin(-transformedUpVectorZZ_Angle);
+
+        final float[] u = perpendicularTransformedUpVector;
+        final float[] u2 = {u[0] * u[0], u[1] * u[1], u[2] * u[2]};
+
+        final float[][] rotMat3 = {
+                {cosTheta + u2[0] * cosThetaInv, u[0] * u[1] * cosThetaInv - u[2] * sinTheta, u[0] * u[2] * cosThetaInv + u[1] * sinTheta},
+                {u[1] * u[0] * cosThetaInv + u[2] * sinTheta, cosTheta + u2[1] * cosThetaInv, u[1] * u[2] * cosThetaInv - u[0] * sinTheta},
+                {u[2] * u[0] * cosThetaInv - u[1] * sinTheta, u[2] * u[1] * cosThetaInv + u[0] * sinTheta, cosTheta + u2[2] * cosThetaInv}
+        };
+
+
+
+
+
+
+
+
+
+
+
+        final float transformedSideVectorXY_Angle = (float) Math.atan2(transformedXVector[0], transformedXVector[1]);
+        Log.d(TAG, String.format("transformedSideVectorXY_Angle: %f", transformedSideVectorXY_Angle));
+        final float angleCos2 = (float) Math.cos(transformedSideVectorXY_Angle);
+        final float angleSin2 = (float) Math.sin(transformedSideVectorXY_Angle);
+        final double[] compensatedTransformedSideVector = {
+                transformedXVector[0] * angleCos2 - transformedXVector[1] * angleSin2,
+                transformedXVector[0] * angleSin2 + transformedXVector[1] * angleCos2,
+                transformedXVector[2]
+        };
+        // compensatedVector[0] should always be 0 !!!
+        final double compensatedTransformedSideVectorLength = Math.sqrt(
+                compensatedTransformedSideVector[0] * compensatedTransformedSideVector[0] +
+                        compensatedTransformedSideVector[1] * compensatedTransformedSideVector[1] +
+                        compensatedTransformedSideVector[2] * compensatedTransformedSideVector[2]
+        );
+        final double[] normalizedCompensatedTransformedSideVector = {
+                compensatedTransformedSideVector[0] / compensatedTransformedSideVectorLength,
+                compensatedTransformedSideVector[1] / compensatedTransformedSideVectorLength,
+                compensatedTransformedSideVector[2] / compensatedTransformedSideVectorLength
+        };
+        Log.d(TAG, String.format("normalizedCompensatedTransformedSideVector: %.2f, %.2f, %.2f",
+                normalizedCompensatedTransformedSideVector[0],
+                normalizedCompensatedTransformedSideVector[1],
+                normalizedCompensatedTransformedSideVector[2])
+        );
+        /*final double[] compensatedTransformedSideVector = {
+                transformedXVector[0] * angleCos2 - transformedXVector[1] * angleSin2,
+                transformedXVector[0] * angleSin2 + transformedXVector[1] * angleCos2,
+                transformedXVector[2]
+        };
+        Log.d(TAG, String.format("compensatedTransformedSideVector: %.2f, %.2f, %.2f",
+                compensatedTransformedSideVector[0],
+                compensatedTransformedSideVector[1],
+                compensatedTransformedSideVector[2])
+        );
+        // compensatedVector[0] should always be 0 !!!
+        final double compensatedTransformedSideVectorLength = Math.sqrt(
+                compensatedTransformedSideVector[0] * compensatedTransformedSideVector[0]
+                        + compensatedTransformedSideVector[2] * compensatedTransformedSideVector[2]
+        );
+        final double[] normalizedCompensatedTransformedSideVector = {
+                0,
+                compensatedTransformedSideVector[1] / compensatedTransformedSideVectorLength,
+                compensatedTransformedSideVector[2] / compensatedTransformedSideVectorLength
+        };
+        Log.d(TAG, String.format("normalizedCompensatedTransformedSideVector: %.2f, %.2f, %.2f",
+                normalizedCompensatedTransformedSideVector[0],
+                normalizedCompensatedTransformedSideVector[1],
+                normalizedCompensatedTransformedSideVector[2])
+        );
+        final float tmp = (float) Math.atan2(compensatedTransformedSideVector[0], compensatedTransformedSideVector[2]);
+        Log.d(TAG, String.format("tmp: %.2f", tmp));
+        final float[] flatTransformedSideVector = multiply(rotMat3, transformedXVector);
+        final float finalRotation = (float) Math.atan2(normalizedCompensatedTransformedSideVector[1], normalizedCompensatedTransformedSideVector[2]);*/
+
+        //float finalRotation = (float) Math.atan2(normalizedCompensatedTransformedSideVector[1], normalizedCompensatedTransformedSideVector[2]);
+
+        float finalRotation;
+        if (transformedZVector[2] >= 0) {
+            finalRotation = (float) Math.atan2(transformedYVector[0], transformedYVector[1]);
+        } else {
+            finalRotation = (float) Math.atan2(transformedYVector[0], -transformedYVector[1]);
+        }
+
+        float finalRotation2;
+        if (transformedZVector[0] >= 0) {
+            finalRotation2 = (float) Math.atan2(transformedYVector[1], transformedYVector[2]);
+        } else {
+            finalRotation2 = (float) Math.atan2(transformedYVector[1], -transformedYVector[2]);
+        }
+
+        Log.d(TAG, String.format("finalRotation: %.2f", finalRotation));
+        Log.d(TAG, String.format("finalRotation2: %.2f", finalRotation2));
+
+        Log.d(TAG, String.format("finalVector: %.2f, %.2f, %.2f, %.2f",
+                finalRotation,
+                normalizedCompensatedTransformedUpVector[0],
+                normalizedCompensatedTransformedUpVector[1],
+                normalizedCompensatedTransformedUpVector[2])
+        );
+
+        /*Log.d(TAG, String.format("Rotation: %.2f, %.2f, %.2f || %.2f, %.2f, %.2f", rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3], rotation[0], rotation[1], rotation[2]));
         rotationsLock.lock();
         try {
             rotations.add(new Rotation(rotationConjToZ2[1], rotationConjToZ2[2], rotationConjToZ2[3]));
         } finally {
             rotationsLock.unlock();
-        }
+        }*/
     }
 }
