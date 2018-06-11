@@ -531,8 +531,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
                 dotProduct)
         );
 
-        finalRotation *= Math.signum(dotProduct);
-        Log.d(TAG, String.format("finalRotation: %.2f", finalRotation));
+        Log.d(TAG, String.format("finalRotation: %.2f", ((float) Math.acos(dotProduct)) * Math.signum(finalRotation)));
         Log.d(TAG, String.format("finalRotation2: %.2f", finalRotation2));
 
         Log.d(TAG, String.format("finalVector: %.2f, %.2f, %.2f, %.2f",
