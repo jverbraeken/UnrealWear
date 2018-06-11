@@ -367,7 +367,7 @@ public final class MainActivity extends Activity implements SensorEventListener 
                 transformedYVector[2])
         );
         final float[] transformedZVector = multiply(rotMat2, Z_VECTOR);
-        Log.d(TAG, String.format("transformedYVector: %.2f, %.2f, %.2f",
+        Log.d(TAG, String.format("transformedZVector: %.2f, %.2f, %.2f",
                 transformedZVector[0],
                 transformedZVector[1],
                 transformedZVector[2])
@@ -498,11 +498,12 @@ public final class MainActivity extends Activity implements SensorEventListener 
         //float finalRotation = (float) Math.atan2(normalizedCompensatedTransformedSideVector[1], normalizedCompensatedTransformedSideVector[2]);
 
         float finalRotation;
-        if (transformedZVector[2] >= 0) {
-            finalRotation = (float) Math.atan2(transformedYVector[0], transformedYVector[1]);
-        } else {
-            finalRotation = (float) Math.atan2(transformedYVector[0], -transformedYVector[1]);
-        }
+        //if (transformedZVector[2] >= 0) {
+            finalRotation = (float) Math.asin(transformedYVector[2]);
+            // finalRotation = (float) Math.atan2(transformedYVector[0], transformedYVector[1]);
+        //} else {
+        //    finalRotation = (float) Math.atan2(transformedYVector[0], -transformedYVector[1]);
+        //}
 
         float finalRotation2;
         if (transformedZVector[0] >= 0) {
@@ -511,6 +512,26 @@ public final class MainActivity extends Activity implements SensorEventListener 
             finalRotation2 = (float) Math.atan2(transformedYVector[1], -transformedYVector[2]);
         }
 
+        float[] flatZVector = {transformedZVector[0], transformedZVector[1], 0};
+        float flatZVectorLength = (float) Math.sqrt(flatZVector[0] * flatZVector[0] + flatZVector[1] * flatZVector[1]);
+        flatZVector[0] /= flatZVectorLength;
+        flatZVector[1] /= flatZVectorLength;
+        float[] crossproduct = {-flatZVector[1], flatZVector[0], 0};
+        Log.d(TAG, String.format("crossproduct: %.2f, %.2f, %.2f",
+                crossproduct[0],
+                crossproduct[1],
+                crossproduct[2])
+        );
+
+        float dotProduct = transformedYVector[0] * crossproduct[0] + transformedYVector[1] * crossproduct[1] + transformedYVector[2] * crossproduct[2];
+        Log.d(TAG, String.format("dotproduct: %.2f, %.2f, %.2f, %.2f",
+                transformedYVector[0] * crossproduct[0],
+                transformedYVector[1] * crossproduct[1],
+                transformedYVector[2] * crossproduct[2],
+                dotProduct)
+        );
+
+        finalRotation *= Math.signum(dotProduct);
         Log.d(TAG, String.format("finalRotation: %.2f", finalRotation));
         Log.d(TAG, String.format("finalRotation2: %.2f", finalRotation2));
 
