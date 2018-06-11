@@ -14,8 +14,9 @@ import java.util.Random;
 import static com.epicgames.ue4.MainActivity.TAG;
 
 public final class SendSensorDataRunnable implements Runnable {
-    private static final float[] SIDE_VECTOR = {1, 0, 0};
-    private static final float[] UP_VECTOR = {0, 0, 1};
+    private static final float[] X_VECTOR = {1, 0, 0};
+    private static final float[] Y_VECTOR = {0, 1, 0};
+    private static final float[] Z_VECTOR = {0, 0, 1};
 
     private static void sendDataOverChannel(final DataOutputStream outputStream, final float[] rotation, final float[] acceleration, final Touch touch) {
         final float[] newRotation = getSendData(rotation);
@@ -70,32 +71,62 @@ public final class SendSensorDataRunnable implements Runnable {
         rotMat2[2][0] = rotMat[6];
         rotMat2[2][1] = rotMat[7];
         rotMat2[2][2] = rotMat[8];
-        final float[] transformedUpVector = multiply(rotMat2, UP_VECTOR);
 
-        /*Log.d(TAG, String.format("rotMat2: %.2f, %.2f, %.2f",
+
+
+
+        /*
+
+
+        Get X-coordinate of X-vector
+        If Z-coordinate of Z-vector is negative: Y-coordinate of X-vector *= -1
+        Angle = atan2(x, y)
+
+
+         */
+
+
+
+
+
+
+        Log.d(TAG, String.format("rotMat2: %.2f, %.2f, %.2f",
                 rotMat[0],
                 rotMat[3],
                 rotMat[6])
-        );*/
+        );
 
         // 1
 
-        /*Log.d(TAG, String.format("transformedUpVector: %.2f, %.2f, %.2f",
-                transformedUpVector[0],
-                transformedUpVector[1],
-                transformedUpVector[2])
-        );*/
+        final float[] transformedXVector = multiply(rotMat2, X_VECTOR);
+        Log.d(TAG, String.format("transformedXVector: %.2f, %.2f, %.2f",
+                transformedXVector[0],
+                transformedXVector[1],
+                transformedXVector[2])
+        );
+        final float[] transformedYVector = multiply(rotMat2, Y_VECTOR);
+        Log.d(TAG, String.format("transformedYVector: %.2f, %.2f, %.2f",
+                transformedYVector[0],
+                transformedYVector[1],
+                transformedYVector[2])
+        );
+        final float[] transformedZVector = multiply(rotMat2, Z_VECTOR);
+        Log.d(TAG, String.format("transformedZVector: %.2f, %.2f, %.2f",
+                transformedZVector[0],
+                transformedZVector[1],
+                transformedZVector[2])
+        );
 
         //
 
-        float transformedUpVectorXY_Angle = (float) Math.atan2(transformedUpVector[0], transformedUpVector[1]);
-        //Log.d(TAG, String.format("transformedUpVectorXY_Angle: %f", transformedUpVectorXY_Angle));
+        float transformedUpVectorXY_Angle = (float) Math.atan2(transformedZVector[0], transformedZVector[1]);
+        Log.d(TAG, String.format("transformedUpVectorXY_Angle: %f", transformedUpVectorXY_Angle));
         final float angleCos = (float) Math.cos(transformedUpVectorXY_Angle);
         final float angleSin = (float) Math.sin(transformedUpVectorXY_Angle);
         final double[] compensatedTransformedUpVector = {
-                transformedUpVector[0] * angleCos - transformedUpVector[1] * angleSin,
-                transformedUpVector[0] * angleSin + transformedUpVector[1] * angleCos,
-                transformedUpVector[2]
+                transformedZVector[0] * angleCos - transformedZVector[1] * angleSin,
+                transformedZVector[0] * angleSin + transformedZVector[1] * angleCos,
+                transformedZVector[2]
         };
         // compensatedVector[0] should always be 0 !!!
         final double compensatedTransformedUpVectorLength = Math.sqrt(
@@ -110,19 +141,19 @@ public final class SendSensorDataRunnable implements Runnable {
 
         // 2
 
-        /*Log.d(TAG, String.format("normalizedCompensatedTransformedUpVector: %.2f, %.2f, %.2f",
+        Log.d(TAG, String.format("normalizedCompensatedTransformedUpVector: %.2f, %.2f, %.2f",
                 normalizedCompensatedTransformedUpVector[0],
                 normalizedCompensatedTransformedUpVector[1],
                 normalizedCompensatedTransformedUpVector[2])
-        );*/
+        );
 
         //
 
-        final double transformedUpVectorZZ_Angle = Math.acos(transformedUpVector[2] / Math.sqrt(transformedUpVector[0] * transformedUpVector[0] + transformedUpVector[1] * transformedUpVector[1] + transformedUpVector[2] * transformedUpVector[2]));
+        final double transformedUpVectorZZ_Angle = Math.acos(transformedZVector[2] / Math.sqrt(transformedZVector[0] * transformedZVector[0] + transformedZVector[1] * transformedZVector[1] + transformedZVector[2] * transformedZVector[2]));
         Log.d(TAG, String.format("angle: %f", transformedUpVectorZZ_Angle));
         final float[] perpendicularTransformedUpVector = {
-                -transformedUpVector[1],
-                transformedUpVector[0],
+                -transformedZVector[1],
+                transformedZVector[0],
                 0
         };
         final double perpendicularTransformedUpVector_Length = Math.sqrt(perpendicularTransformedUpVector[0] * perpendicularTransformedUpVector[0] + perpendicularTransformedUpVector[1] * perpendicularTransformedUpVector[1]);
@@ -152,24 +183,45 @@ public final class SendSensorDataRunnable implements Runnable {
 
 
 
-        final float[] transformedSideVector = multiply(rotMat2, SIDE_VECTOR);
-        Log.d(TAG, String.format("transformedSideVector: %.2f, %.2f, %.2f",
-                transformedSideVector[0],
-                transformedSideVector[1],
-                transformedSideVector[2])
-        );
-        final float transformedSideVectorXY_Angle = (float) Math.atan2(transformedSideVector[0], transformedSideVector[1]);
+
+        final float transformedSideVectorXY_Angle = (float) Math.atan2(transformedXVector[0], transformedXVector[1]);
         Log.d(TAG, String.format("transformedSideVectorXY_Angle: %f", transformedSideVectorXY_Angle));
         final float angleCos2 = (float) Math.cos(transformedSideVectorXY_Angle);
         final float angleSin2 = (float) Math.sin(transformedSideVectorXY_Angle);
         final double[] compensatedTransformedSideVector = {
-                transformedSideVector[0] * angleCos2 - transformedSideVector[1] * angleSin2,
-                transformedSideVector[0] * angleSin2 + transformedSideVector[1] * angleCos2,
-                transformedSideVector[2]
+                transformedXVector[0] * angleCos2 - transformedXVector[1] * angleSin2,
+                transformedXVector[0] * angleSin2 + transformedXVector[1] * angleCos2,
+                transformedXVector[2]
         };
         // compensatedVector[0] should always be 0 !!!
         final double compensatedTransformedSideVectorLength = Math.sqrt(
-                compensatedTransformedSideVector[1] * compensatedTransformedSideVector[1]
+                compensatedTransformedSideVector[0] * compensatedTransformedSideVector[0] +
+                        compensatedTransformedSideVector[1] * compensatedTransformedSideVector[1] +
+                        compensatedTransformedSideVector[2] * compensatedTransformedSideVector[2]
+        );
+        final double[] normalizedCompensatedTransformedSideVector = {
+                compensatedTransformedSideVector[0] / compensatedTransformedSideVectorLength,
+                compensatedTransformedSideVector[1] / compensatedTransformedSideVectorLength,
+                compensatedTransformedSideVector[2] / compensatedTransformedSideVectorLength
+        };
+        Log.d(TAG, String.format("normalizedCompensatedTransformedSideVector: %.2f, %.2f, %.2f",
+                normalizedCompensatedTransformedSideVector[0],
+                normalizedCompensatedTransformedSideVector[1],
+                normalizedCompensatedTransformedSideVector[2])
+        );
+        /*final double[] compensatedTransformedSideVector = {
+                transformedXVector[0] * angleCos2 - transformedXVector[1] * angleSin2,
+                transformedXVector[0] * angleSin2 + transformedXVector[1] * angleCos2,
+                transformedXVector[2]
+        };
+        Log.d(TAG, String.format("compensatedTransformedSideVector: %.2f, %.2f, %.2f",
+                compensatedTransformedSideVector[0],
+                compensatedTransformedSideVector[1],
+                compensatedTransformedSideVector[2])
+        );
+        // compensatedVector[0] should always be 0 !!!
+        final double compensatedTransformedSideVectorLength = Math.sqrt(
+                compensatedTransformedSideVector[0] * compensatedTransformedSideVector[0]
                         + compensatedTransformedSideVector[2] * compensatedTransformedSideVector[2]
         );
         final double[] normalizedCompensatedTransformedSideVector = {
@@ -184,10 +236,49 @@ public final class SendSensorDataRunnable implements Runnable {
         );
         final float tmp = (float) Math.atan2(compensatedTransformedSideVector[0], compensatedTransformedSideVector[2]);
         Log.d(TAG, String.format("tmp: %.2f", tmp));
-        final float[] flatTransformedSideVector = multiply(rotMat3, transformedSideVector);
-        final float finalRotation = (float) Math.atan2(normalizedCompensatedTransformedSideVector[1], normalizedCompensatedTransformedSideVector[2]);
+        final float[] flatTransformedSideVector = multiply(rotMat3, transformedXVector);
+        final float finalRotation = (float) Math.atan2(normalizedCompensatedTransformedSideVector[1], normalizedCompensatedTransformedSideVector[2]);*/
 
-        Log.d(TAG, String.format("finalRotation: %.2f", finalRotation));
+        //float finalRotation = (float) Math.atan2(normalizedCompensatedTransformedSideVector[1], normalizedCompensatedTransformedSideVector[2]);
+
+        float finalRotation;
+        //if (transformedZVector[2] >= 0) {
+        finalRotation = (float) Math.asin(transformedYVector[2]);
+        // finalRotation = (float) Math.atan2(transformedYVector[0], transformedYVector[1]);
+        //} else {
+        //    finalRotation = (float) Math.atan2(transformedYVector[0], -transformedYVector[1]);
+        //}
+
+        float finalRotation2;
+        if (transformedZVector[0] >= 0) {
+            finalRotation2 = (float) Math.atan2(transformedYVector[1], transformedYVector[2]);
+        } else {
+            finalRotation2 = (float) Math.atan2(transformedYVector[1], -transformedYVector[2]);
+        }
+
+        float[] flatZVector = {transformedZVector[0], transformedZVector[1], 0};
+        float flatZVectorLength = (float) Math.sqrt(flatZVector[0] * flatZVector[0] + flatZVector[1] * flatZVector[1]);
+        flatZVector[0] /= flatZVectorLength;
+        flatZVector[1] /= flatZVectorLength;
+        float[] crossproduct = {-flatZVector[1], flatZVector[0], 0};
+        Log.d(TAG, String.format("crossproduct: %.2f, %.2f, %.2f",
+                crossproduct[0],
+                crossproduct[1],
+                crossproduct[2])
+        );
+
+
+
+        float dotProduct = transformedYVector[0] * crossproduct[0] + transformedYVector[1] * crossproduct[1] + transformedYVector[2] * crossproduct[2];
+        Log.d(TAG, String.format("dotproduct: %.2f, %.2f, %.2f, %.2f",
+                transformedYVector[0] * crossproduct[0],
+                transformedYVector[1] * crossproduct[1],
+                transformedYVector[2] * crossproduct[2],
+                dotProduct)
+        );
+
+        Log.d(TAG, String.format("finalRotation: %.2f", ((float) Math.acos(dotProduct)) * Math.signum(finalRotation)));
+        Log.d(TAG, String.format("finalRotation2: %.2f", finalRotation2));
 
         Log.d(TAG, String.format("finalVector: %.2f, %.2f, %.2f, %.2f",
                 finalRotation,
@@ -196,7 +287,7 @@ public final class SendSensorDataRunnable implements Runnable {
                 normalizedCompensatedTransformedUpVector[2])
         );
 
-        return new float[]{finalRotation, transformedUpVector[0], transformedUpVector[1], transformedUpVector[2]};
+        return new float[]{finalRotation, transformedZVector[0], transformedZVector[1], transformedZVector[2]};
     }
 
     @Override
