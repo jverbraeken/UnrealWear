@@ -292,7 +292,6 @@ public final class SendSensorDataRunnable implements Runnable {
 
     @Override
     public void run() {
-        Log.d("Bar", "running: " + new Random().nextDouble());
         final DataOutputStream dataOutputStream = MainActivity.getChannelOutputStream();
         if (dataOutputStream != null) {
             final List<float[]> rotations = MainActivity.getRotations();
